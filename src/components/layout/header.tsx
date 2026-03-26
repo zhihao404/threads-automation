@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Menu, Bell, ChevronDown } from "lucide-react";
+import { Menu, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -27,6 +28,7 @@ const pageTitles: Record<string, string> = {
   "/replies": "Replies",
   "/accounts": "Accounts",
   "/settings": "Settings",
+  "/notifications": "Notifications",
 };
 
 export function Header({ onMenuClick }: HeaderProps) {
@@ -86,11 +88,7 @@ export function Header({ onMenuClick }: HeaderProps) {
       </DropdownMenu>
 
       {/* Notification bell */}
-      <Button variant="ghost" size="icon" className="relative">
-        <Bell className="h-5 w-5" />
-        <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-destructive" />
-        <span className="sr-only">Notifications</span>
-      </Button>
+      <NotificationBell />
     </header>
   );
 }

@@ -6,6 +6,7 @@ import { eq, and, desc, sql, like, or } from "drizzle-orm";
 import { ulid } from "ulid";
 import { createTemplateSchema } from "@/lib/validations/template";
 import { cookies } from "next/headers";
+import { guardPlanLimit } from "@/lib/plans/guard";
 
 async function getAuthenticatedUserId(): Promise<string | null> {
   const cookieStore = await cookies();
@@ -127,6 +128,10 @@ export async function POST(request: NextRequest) {
     const input = parseResult.data;
     const { env } = await getCloudflareContext({ async: true });
     const db = createDb(env.DB);
+
+    // Check plan limit for template creation
+    const limitResponse = await guardPlanLimit(db, userId, "template");
+    if (limitResponse) return limitResponse;
 
     const now = new Date();
     const templateId = ulid();

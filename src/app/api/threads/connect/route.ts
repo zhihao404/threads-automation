@@ -2,13 +2,17 @@
 // GET /api/threads/connect - Initiates the Threads OAuth flow
 // =============================================================================
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getAuthorizationUrl } from "@/lib/threads/oauth";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { createDb } from "@/db";
+import { session } from "@/db/schema";
+import { eq, and, sql } from "drizzle-orm";
+import { guardPlanLimit } from "@/lib/plans/guard";
 
 export const runtime = "edge";
 
-export async function GET(): Promise<NextResponse> {
+export async function GET(request: NextRequest): Promise<NextResponse> {
   const { env } = getCloudflareContext();
 
   const clientId = env.THREADS_APP_ID;
@@ -26,6 +30,28 @@ export async function GET(): Promise<NextResponse> {
       { error: "NEXT_PUBLIC_APP_URL is not configured" },
       { status: 500 },
     );
+  }
+
+  // Check authentication and account limit before starting OAuth
+  const sessionToken = request.cookies.get("better-auth.session_token")?.value;
+  if (sessionToken) {
+    const db = createDb(env.DB);
+    const sessions = await db
+      .select({ userId: session.userId })
+      .from(session)
+      .where(
+        and(
+          eq(session.token, sessionToken),
+          sql`${session.expiresAt} > ${Math.floor(Date.now() / 1000)}`,
+        ),
+      )
+      .limit(1);
+
+    const userId = sessions[0]?.userId;
+    if (userId) {
+      const limitResponse = await guardPlanLimit(db, userId, "account");
+      if (limitResponse) return limitResponse;
+    }
   }
 
   // Generate a cryptographically random state parameter for CSRF protection

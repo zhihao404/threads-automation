@@ -6,6 +6,8 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { ulid } from "ulid";
 import { createPostSchema } from "@/lib/validations/post";
 import { cookies } from "next/headers";
+import { guardPlanLimit } from "@/lib/plans/guard";
+import { incrementUsage } from "@/lib/plans/limits";
 
 async function getAuthenticatedUserId(): Promise<string | null> {
   const cookieStore = await cookies();
@@ -189,6 +191,16 @@ export async function POST(request: NextRequest) {
     const { env } = await getCloudflareContext({ async: true });
     const db = createDb(env.DB);
 
+    // Check plan limit for post creation
+    const postLimitResponse = await guardPlanLimit(db, userId, "post");
+    if (postLimitResponse) return postLimitResponse;
+
+    // If scheduling, also check the scheduled posts limit
+    if (input.status === "scheduled") {
+      const scheduleLimitResponse = await guardPlanLimit(db, userId, "schedule");
+      if (scheduleLimitResponse) return scheduleLimitResponse;
+    }
+
     // Verify the account belongs to this user
     const accountRows = await db
       .select()
@@ -285,6 +297,8 @@ export async function POST(request: NextRequest) {
           updatedAt: now,
         });
 
+        await incrementUsage(db, userId, "post");
+
         return NextResponse.json(
           { id: postId, status: "published", threadsMediaId: publishedMediaId },
           { status: 201 }
@@ -337,6 +351,8 @@ export async function POST(request: NextRequest) {
         updatedAt: now,
       });
 
+      await incrementUsage(db, userId, "post");
+
       return NextResponse.json(
         { id: postId, status: "scheduled" },
         { status: 201 }
@@ -355,6 +371,8 @@ export async function POST(request: NextRequest) {
         createdAt: now,
         updatedAt: now,
       });
+
+      await incrementUsage(db, userId, "post");
 
       return NextResponse.json(
         { id: postId, status: "draft" },

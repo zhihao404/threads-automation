@@ -14,7 +14,9 @@ export function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/accounts") ||
     request.nextUrl.pathname.startsWith("/settings") ||
     request.nextUrl.pathname.startsWith("/ai") ||
-    request.nextUrl.pathname.startsWith("/replies");
+    request.nextUrl.pathname.startsWith("/replies") ||
+    request.nextUrl.pathname.startsWith("/reports") ||
+    request.nextUrl.pathname.startsWith("/notifications");
 
   // Redirect unauthenticated users to login
   if (isProtectedRoute && !sessionCookie) {
@@ -37,6 +39,8 @@ export const config = {
     "/settings/:path*",
     "/ai/:path*",
     "/replies/:path*",
+    "/reports/:path*",
+    "/notifications/:path*",
     "/login",
     "/register",
   ],

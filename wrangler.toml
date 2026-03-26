@@ -30,6 +30,11 @@ binding = "POST_QUEUE"
 # BETTER_AUTH_SECRET
 # ANTHROPIC_API_KEY
 # ENCRYPTION_KEY
+# WEBHOOK_VERIFY_TOKEN - Token for verifying Threads webhook subscription requests
+# STRIPE_SECRET_KEY - Stripe API secret key (sk_live_... or sk_test_...)
+# STRIPE_WEBHOOK_SECRET - Stripe webhook endpoint signing secret (whsec_...)
+# STRIPE_PRO_PRICE_ID - Stripe Price ID for the Pro plan (price_...)
+# STRIPE_BUSINESS_PRICE_ID - Stripe Price ID for the Business plan (price_...)
 
 [vars]
 NEXT_PUBLIC_APP_URL = "http://localhost:3000"

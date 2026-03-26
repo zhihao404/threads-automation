@@ -6,6 +6,8 @@ import { session } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { generatePostSchema } from "@/lib/validations/ai";
 import { generatePosts } from "@/lib/ai/generate";
+import { guardPlanLimit } from "@/lib/plans/guard";
+import { incrementUsage } from "@/lib/plans/limits";
 
 async function getAuthenticatedUserId(): Promise<string | null> {
   const cookieStore = await cookies();
@@ -54,6 +56,11 @@ export async function POST(request: NextRequest) {
 
     const input = parseResult.data;
     const { env } = await getCloudflareContext({ async: true });
+    const db = createDb(env.DB);
+
+    // Check plan limit for AI generation
+    const limitResponse = await guardPlanLimit(db, userId, "ai_generation");
+    if (limitResponse) return limitResponse;
 
     if (!env.ANTHROPIC_API_KEY) {
       return NextResponse.json(
@@ -71,6 +78,8 @@ export async function POST(request: NextRequest) {
       includeTopicTag: input.includeTopicTag,
       referenceContent: input.referenceContent,
     });
+
+    await incrementUsage(db, userId, "ai_generation");
 
     return NextResponse.json(result);
   } catch (error: unknown) {

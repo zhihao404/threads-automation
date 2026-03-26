@@ -217,6 +217,8 @@ export const usersRelations = relations(users, ({ many }) => ({
   accounts: many(account),
   threadsAccounts: many(threadsAccounts),
   postTemplates: many(postTemplates),
+  subscriptions: many(subscriptions),
+  usageRecords: many(usageRecords),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -242,6 +244,8 @@ export const threadsAccountsRelations = relations(threadsAccounts, ({ one, many 
   accountMetrics: many(accountMetrics),
   recurringSchedules: many(recurringSchedules),
   postQueue: many(postQueue),
+  reports: many(reports),
+  notifications: many(notifications),
 }));
 
 export const postsRelations = relations(posts, ({ one, many }) => ({
@@ -333,3 +337,164 @@ export type NewRecurringSchedule = typeof recurringSchedules.$inferInsert;
 
 export type PostQueueEntry = typeof postQueue.$inferSelect;
 export type NewPostQueueEntry = typeof postQueue.$inferInsert;
+
+// =============================================================================
+// Reports table
+// =============================================================================
+
+export const reports = sqliteTable(
+  "reports",
+  {
+    id: text("id").primaryKey(), // ULID
+    accountId: text("account_id")
+      .notNull()
+      .references(() => threadsAccounts.id, { onDelete: "cascade" }),
+    type: text("type", { enum: ["weekly", "monthly"] }).notNull(),
+    title: text("title").notNull(),
+    periodStart: text("period_start").notNull(), // YYYY-MM-DD
+    periodEnd: text("period_end").notNull(), // YYYY-MM-DD
+    content: text("content").notNull(), // Full HTML report content
+    summary: text("summary").notNull(), // AI-generated summary
+    metrics: text("metrics").notNull(), // JSON: aggregated metrics snapshot
+    status: text("status", { enum: ["generating", "completed", "failed"] })
+      .notNull()
+      .default("generating"),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  },
+  (table) => [
+    index("reports_account_id_idx").on(table.accountId),
+    index("reports_created_at_idx").on(table.createdAt),
+  ],
+);
+
+export const reportsRelations = relations(reports, ({ one }) => ({
+  account: one(threadsAccounts, {
+    fields: [reports.accountId],
+    references: [threadsAccounts.id],
+  }),
+}));
+
+export type Report = typeof reports.$inferSelect;
+export type NewReport = typeof reports.$inferInsert;
+
+// =============================================================================
+// Webhook & Notifications tables
+// =============================================================================
+
+export const notifications = sqliteTable(
+  "notifications",
+  {
+    id: text("id").primaryKey(), // ULID
+    accountId: text("account_id")
+      .notNull()
+      .references(() => threadsAccounts.id, { onDelete: "cascade" }),
+    type: text("type", { enum: ["reply", "mention", "publish", "delete"] }).notNull(),
+    title: text("title").notNull(),
+    body: text("body"),
+    metadata: text("metadata"), // JSON: additional data (permalink, username, etc.)
+    isRead: integer("is_read", { mode: "boolean" }).notNull().default(false),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  },
+  (table) => [
+    index("notifications_account_id_idx").on(table.accountId),
+    index("notifications_created_at_idx").on(table.createdAt),
+  ],
+);
+
+export const webhookEvents = sqliteTable("webhook_events", {
+  id: text("id").primaryKey(), // ULID
+  topic: text("topic").notNull(),
+  payload: text("payload").notNull(), // Raw JSON
+  processed: integer("processed", { mode: "boolean" }).notNull().default(false),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+// =============================================================================
+// Webhook & Notifications relations
+// =============================================================================
+
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  account: one(threadsAccounts, {
+    fields: [notifications.accountId],
+    references: [threadsAccounts.id],
+  }),
+}));
+
+export type Notification = typeof notifications.$inferSelect;
+export type NewNotification = typeof notifications.$inferInsert;
+
+export type WebhookEvent = typeof webhookEvents.$inferSelect;
+export type NewWebhookEvent = typeof webhookEvents.$inferInsert;
+
+// =============================================================================
+// Subscriptions & Usage tables
+// =============================================================================
+
+export const subscriptions = sqliteTable("subscriptions", {
+  id: text("id").primaryKey(), // ULID
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  stripeCustomerId: text("stripe_customer_id").notNull(),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  stripePriceId: text("stripe_price_id"),
+  plan: text("plan", { enum: ["free", "pro", "business"] })
+    .notNull()
+    .default("free"),
+  status: text("status", {
+    enum: ["active", "canceled", "past_due", "trialing", "incomplete"],
+  })
+    .notNull()
+    .default("active"),
+  currentPeriodStart: integer("current_period_start", { mode: "timestamp" }),
+  currentPeriodEnd: integer("current_period_end", { mode: "timestamp" }),
+  cancelAtPeriodEnd: integer("cancel_at_period_end", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+});
+
+export const usageRecords = sqliteTable(
+  "usage_records",
+  {
+    id: text("id").primaryKey(), // ULID
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: text("type", {
+      enum: ["post", "ai_generation", "schedule", "template"],
+    }).notNull(),
+    count: integer("count").notNull().default(0),
+    periodStart: text("period_start").notNull(), // YYYY-MM-DD
+    periodEnd: text("period_end").notNull(), // YYYY-MM-DD
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  },
+  (table) => [
+    index("usage_records_user_period_idx").on(table.userId, table.periodStart),
+  ],
+);
+
+// =============================================================================
+// Subscriptions & Usage relations
+// =============================================================================
+
+export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
+  user: one(users, {
+    fields: [subscriptions.userId],
+    references: [users.id],
+  }),
+}));
+
+export const usageRecordsRelations = relations(usageRecords, ({ one }) => ({
+  user: one(users, {
+    fields: [usageRecords.userId],
+    references: [users.id],
+  }),
+}));
+
+export type Subscription = typeof subscriptions.$inferSelect;
+export type NewSubscription = typeof subscriptions.$inferInsert;
+
+export type UsageRecord = typeof usageRecords.$inferSelect;
+export type NewUsageRecord = typeof usageRecords.$inferInsert;

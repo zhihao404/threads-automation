@@ -30,6 +30,15 @@ declare global {
     // Cloudflare Queue for background job processing
     POST_QUEUE: Queue;
 
+    // Webhook verify token (set via wrangler secret)
+    WEBHOOK_VERIFY_TOKEN: string;
+
+    // Stripe
+    STRIPE_SECRET_KEY: string;
+    STRIPE_WEBHOOK_SECRET: string;
+    STRIPE_PRO_PRICE_ID: string;
+    STRIPE_BUSINESS_PRICE_ID: string;
+
     // App URL
     NEXT_PUBLIC_APP_URL: string;
   }
