@@ -1,0 +1,35 @@
+name = "threads-automation"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+main = ".open-next/worker.js"
+
+# D1 Database
+[[d1_databases]]
+binding = "DB"
+database_name = "threads-automation-db"
+database_id = "c471516a-b18a-44b7-9dc4-236c9fb38679"
+
+# R2 Bucket for media uploads
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "threads-media"
+
+# KV Namespace for caching
+[[kv_namespaces]]
+binding = "CACHE"
+id = "placeholder-replace-with-actual-id"
+
+# Cloudflare Queue (producer only - consumed by the worker)
+[[queues.producers]]
+queue = "threads-post-queue"
+binding = "POST_QUEUE"
+
+# Environment variables (set via wrangler secret)
+# THREADS_APP_ID
+# THREADS_APP_SECRET
+# BETTER_AUTH_SECRET
+# ANTHROPIC_API_KEY
+# ENCRYPTION_KEY
+
+[vars]
+NEXT_PUBLIC_APP_URL = "http://localhost:3000"

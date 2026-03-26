@@ -1,0 +1,27 @@
+name = "threads-automation-worker"
+main = "scheduled-worker.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# D1 Database (shared with the Next.js app)
+[[d1_databases]]
+binding = "DB"
+database_name = "threads-automation-db"
+database_id = "placeholder-replace-with-actual-id"
+
+# Queue producer binding
+[[queues.producers]]
+queue = "threads-post-queue"
+binding = "POST_QUEUE"
+
+# Queue consumer configuration
+[[queues.consumers]]
+queue = "threads-post-queue"
+max_batch_size = 5
+max_batch_timeout = 30
+max_retries = 3
+dead_letter_queue = "threads-post-dlq"
+
+# Cron triggers
+[triggers]
+crons = ["* * * * *", "0 * * * *", "0 0 * * *"]
