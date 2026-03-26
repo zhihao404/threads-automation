@@ -15,6 +15,7 @@ import {
   type AccountOverview,
   type PostPerformanceData,
 } from "@/lib/ai/insights";
+import { AIConfigurationError, resolveAIProvider } from "@/lib/ai/provider";
 
 async function getAuthenticatedUserId(): Promise<string | null> {
   const cookieStore = await cookies();
@@ -83,11 +84,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!env.ANTHROPIC_API_KEY) {
-      return NextResponse.json(
-        { error: "AI機能が設定されていません。管理者にお問い合わせください。" },
-        { status: 503 }
-      );
+    const aiConfig = (() => {
+      try {
+        return resolveAIProvider(env);
+      } catch (error) {
+        if (error instanceof AIConfigurationError) {
+          return error;
+        }
+        throw error;
+      }
+    })();
+
+    if (aiConfig instanceof AIConfigurationError) {
+      return NextResponse.json({ error: aiConfig.message }, { status: 503 });
     }
 
     // Calculate period start date
@@ -115,7 +124,7 @@ export async function POST(request: NextRequest) {
 
     // Fetch latest metrics for each post
     const postIds = publishedPosts.map((p) => p.id);
-    let metricsMap: Record<
+    const metricsMap: Record<
       string,
       { views: number; likes: number; replies: number; reposts: number; quotes: number }
     > = {};
@@ -236,7 +245,7 @@ export async function POST(request: NextRequest) {
       postsByDay,
     };
 
-    const insights = await generateInsights(env.ANTHROPIC_API_KEY, accountData);
+    const insights = await generateInsights(aiConfig, accountData);
 
     return NextResponse.json({ insights, accountData });
   } catch (error: unknown) {

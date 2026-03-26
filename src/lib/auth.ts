@@ -8,7 +8,12 @@ export function createAuth(d1: D1Database) {
   return betterAuth({
     database: drizzleAdapter(db, {
       provider: "sqlite",
-      usePlural: false,
+      schema: {
+        user: schema.users,
+        session: schema.session,
+        account: schema.account,
+        verification: schema.verification,
+      },
     }),
     emailAndPassword: {
       enabled: true,

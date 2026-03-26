@@ -1,6 +1,7 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { format, addDays } from "date-fns";
 import type { AccountOverview } from "./insights";
+import { parseJsonResponse } from "./json";
+import { generateAIText, type AIProviderConfig } from "./provider";
 
 export interface CalendarSuggestion {
   date: string;
@@ -122,37 +123,12 @@ function buildCalendarUserPrompt(
   return parts.join("\n");
 }
 
-function parseCalendarResponse(
-  response: Anthropic.Message
-): CalendarSuggestion[] {
-  const textBlock = response.content.find((block) => block.type === "text");
-  if (!textBlock || textBlock.type !== "text") {
-    throw new Error("AIからの応答が空です");
-  }
-
-  let rawText = textBlock.text.trim();
-
-  const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) {
-    rawText = jsonMatch[1].trim();
-  }
-
-  let parsed: { suggestions: CalendarSuggestion[] };
-
-  try {
-    parsed = JSON.parse(rawText);
-  } catch {
-    const objectMatch = rawText.match(/\{[\s\S]*\}/);
-    if (objectMatch) {
-      try {
-        parsed = JSON.parse(objectMatch[0]);
-      } catch {
-        throw new Error("AIの応答をJSONとして解析できませんでした");
-      }
-    } else {
-      throw new Error("AIの応答にJSONが見つかりませんでした");
-    }
-  }
+function parseCalendarResponse(rawText: string): CalendarSuggestion[] {
+  const parsed = parseJsonResponse<{ suggestions: CalendarSuggestion[] }>(
+    rawText,
+    "AIの応答をJSONとして解析できませんでした",
+    "AIの応答にJSONが見つかりませんでした"
+  );
 
   if (!parsed.suggestions || !Array.isArray(parsed.suggestions)) {
     throw new Error("AIの応答にカレンダーデータが含まれていません");
@@ -169,11 +145,9 @@ function parseCalendarResponse(
 }
 
 export async function generateContentCalendar(
-  apiKey: string,
+  config: AIProviderConfig,
   params: CalendarParams
 ): Promise<CalendarSuggestion[]> {
-  const client = new Anthropic({ apiKey });
-
   const startDate = new Date();
   startDate.setDate(startDate.getDate() + 1); // Start from tomorrow
   const days = getPeriodDays(params.period);
@@ -181,12 +155,12 @@ export async function generateContentCalendar(
   const systemPrompt = buildCalendarSystemPrompt();
   const userPrompt = buildCalendarUserPrompt(params, startDate, days);
 
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 4096,
-    system: systemPrompt,
-    messages: [{ role: "user", content: userPrompt }],
+  const response = await generateAIText(config, {
+    systemPrompt,
+    userPrompt,
+    maxOutputTokens: 4096,
+    jsonMode: true,
   });
 
-  return parseCalendarResponse(response);
+  return parseCalendarResponse(response.text);
 }

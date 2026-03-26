@@ -8,6 +8,7 @@ main = ".open-next/worker.js"
 binding = "DB"
 database_name = "threads-automation-db"
 database_id = "c471516a-b18a-44b7-9dc4-236c9fb38679"
+migrations_dir = "drizzle/migrations"
 
 # R2 Bucket for media uploads
 [[r2_buckets]]
@@ -28,7 +29,11 @@ binding = "POST_QUEUE"
 # THREADS_APP_ID
 # THREADS_APP_SECRET
 # BETTER_AUTH_SECRET
+# AI_PROVIDER - anthropic / openai / auto（未指定時は ANTHROPIC_API_KEY を優先）
 # ANTHROPIC_API_KEY
+# ANTHROPIC_MODEL - optional
+# OPENAI_API_KEY
+# OPENAI_MODEL - optional
 # ENCRYPTION_KEY
 # WEBHOOK_VERIFY_TOKEN - Token for verifying Threads webhook subscription requests
 # STRIPE_SECRET_KEY - Stripe API secret key (sk_live_... or sk_test_...)

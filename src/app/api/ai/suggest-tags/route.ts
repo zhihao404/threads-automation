@@ -6,6 +6,7 @@ import { session } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { suggestTagsSchema } from "@/lib/validations/ai";
 import { suggestTopicTags } from "@/lib/ai/suggest-tags";
+import { AIConfigurationError, resolveAIProvider } from "@/lib/ai/provider";
 
 async function getAuthenticatedUserId(): Promise<string | null> {
   const cookieStore = await cookies();
@@ -55,18 +56,24 @@ export async function POST(request: NextRequest) {
     const input = parseResult.data;
     const { env } = await getCloudflareContext({ async: true });
 
-    if (!env.ANTHROPIC_API_KEY) {
+    let aiConfig;
+    try {
+      aiConfig = resolveAIProvider(env);
+    } catch (error) {
+      if (error instanceof AIConfigurationError) {
+        return NextResponse.json({ error: error.message }, { status: 503 });
+      }
+      throw error;
+    }
+
+    if (!aiConfig) {
       return NextResponse.json(
         { error: "AI機能が設定されていません。管理者にお問い合わせください。" },
         { status: 503 }
       );
     }
 
-    const tags = await suggestTopicTags(
-      env.ANTHROPIC_API_KEY,
-      input.content,
-      input.count
-    );
+    const tags = await suggestTopicTags(aiConfig, input.content, input.count);
 
     return NextResponse.json({ tags });
   } catch (error: unknown) {

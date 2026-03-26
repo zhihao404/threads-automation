@@ -205,7 +205,7 @@ export default function TermsPage() {
                 当サービスの機能が制限または利用不能となる場合があります。
               </li>
               <li>
-                AI（Claude API）を利用したコンテンツ生成機能について、生成されるコンテンツの正確性、適切性、
+                AI（Anthropic Claude APIまたはOpenAI API）を利用したコンテンツ生成機能について、生成されるコンテンツの正確性、適切性、
                 完全性を保証するものではありません。
               </li>
               <li>

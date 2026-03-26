@@ -8,6 +8,7 @@ import { generatePostSchema } from "@/lib/validations/ai";
 import { generatePosts } from "@/lib/ai/generate";
 import { guardPlanLimit } from "@/lib/plans/guard";
 import { incrementUsage } from "@/lib/plans/limits";
+import { AIConfigurationError, resolveAIProvider } from "@/lib/ai/provider";
 
 async function getAuthenticatedUserId(): Promise<string | null> {
   const cookieStore = await cookies();
@@ -62,14 +63,24 @@ export async function POST(request: NextRequest) {
     const limitResponse = await guardPlanLimit(db, userId, "ai_generation");
     if (limitResponse) return limitResponse;
 
-    if (!env.ANTHROPIC_API_KEY) {
+    let aiConfig;
+    try {
+      aiConfig = resolveAIProvider(env);
+    } catch (error) {
+      if (error instanceof AIConfigurationError) {
+        return NextResponse.json({ error: error.message }, { status: 503 });
+      }
+      throw error;
+    }
+
+    if (!aiConfig) {
       return NextResponse.json(
         { error: "AI機能が設定されていません。管理者にお問い合わせください。" },
         { status: 503 }
       );
     }
 
-    const result = await generatePosts(env.ANTHROPIC_API_KEY, {
+    const result = await generatePosts(aiConfig, {
       topic: input.topic,
       tone: input.tone,
       context: input.context,

@@ -21,8 +21,12 @@ declare global {
     // Better Auth secret
     BETTER_AUTH_SECRET: string;
 
-    // Anthropic API key
-    ANTHROPIC_API_KEY: string;
+    // AI provider selection and credentials
+    AI_PROVIDER?: string;
+    ANTHROPIC_API_KEY?: string;
+    ANTHROPIC_MODEL?: string;
+    OPENAI_API_KEY?: string;
+    OPENAI_MODEL?: string;
 
     // Encryption key for token storage
     ENCRYPTION_KEY: string;

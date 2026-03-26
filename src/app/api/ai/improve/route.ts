@@ -6,6 +6,7 @@ import { session } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { improvePostSchema } from "@/lib/validations/ai";
 import { improvePost } from "@/lib/ai/improve";
+import { AIConfigurationError, resolveAIProvider } from "@/lib/ai/provider";
 
 async function getAuthenticatedUserId(): Promise<string | null> {
   const cookieStore = await cookies();
@@ -55,18 +56,24 @@ export async function POST(request: NextRequest) {
     const input = parseResult.data;
     const { env } = await getCloudflareContext({ async: true });
 
-    if (!env.ANTHROPIC_API_KEY) {
+    let aiConfig;
+    try {
+      aiConfig = resolveAIProvider(env);
+    } catch (error) {
+      if (error instanceof AIConfigurationError) {
+        return NextResponse.json({ error: error.message }, { status: 503 });
+      }
+      throw error;
+    }
+
+    if (!aiConfig) {
       return NextResponse.json(
         { error: "AI機能が設定されていません。管理者にお問い合わせください。" },
         { status: 503 }
       );
     }
 
-    const suggestions = await improvePost(
-      env.ANTHROPIC_API_KEY,
-      input.content,
-      input.goal
-    );
+    const suggestions = await improvePost(aiConfig, input.content, input.goal);
 
     return NextResponse.json({ suggestions });
   } catch (error: unknown) {

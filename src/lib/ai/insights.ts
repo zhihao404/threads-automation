@@ -1,4 +1,5 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { parseJsonResponse } from "./json";
+import { generateAIText, type AIProviderConfig } from "./provider";
 
 export interface PostPerformanceData {
   content: string;
@@ -118,35 +119,12 @@ ${topEngagementPosts || "  データなし"}
 JSON形式のみで回答してください。`;
 }
 
-function parseInsightsResponse(response: Anthropic.Message): InsightResult {
-  const textBlock = response.content.find((block) => block.type === "text");
-  if (!textBlock || textBlock.type !== "text") {
-    throw new Error("AIからの応答が空です");
-  }
-
-  let rawText = textBlock.text.trim();
-
-  const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) {
-    rawText = jsonMatch[1].trim();
-  }
-
-  let parsed: InsightResult;
-
-  try {
-    parsed = JSON.parse(rawText);
-  } catch {
-    const objectMatch = rawText.match(/\{[\s\S]*\}/);
-    if (objectMatch) {
-      try {
-        parsed = JSON.parse(objectMatch[0]);
-      } catch {
-        throw new Error("AIの応答をJSONとして解析できませんでした");
-      }
-    } else {
-      throw new Error("AIの応答にJSONが見つかりませんでした");
-    }
-  }
+function parseInsightsResponse(rawText: string): InsightResult {
+  const parsed = parseJsonResponse<InsightResult>(
+    rawText,
+    "AIの応答をJSONとして解析できませんでした",
+    "AIの応答にJSONが見つかりませんでした"
+  );
 
   if (!parsed.summary || !Array.isArray(parsed.strengths)) {
     throw new Error("AIの応答に必要なフィールドが含まれていません");
@@ -163,20 +141,18 @@ function parseInsightsResponse(response: Anthropic.Message): InsightResult {
 }
 
 export async function generateInsights(
-  apiKey: string,
+  config: AIProviderConfig,
   data: AccountOverview
 ): Promise<InsightResult> {
-  const client = new Anthropic({ apiKey });
-
   const systemPrompt = buildInsightsSystemPrompt();
   const userPrompt = buildInsightsUserPrompt(data);
 
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 2048,
-    system: systemPrompt,
-    messages: [{ role: "user", content: userPrompt }],
+  const response = await generateAIText(config, {
+    systemPrompt,
+    userPrompt,
+    maxOutputTokens: 2048,
+    jsonMode: true,
   });
 
-  return parseInsightsResponse(response);
+  return parseInsightsResponse(response.text);
 }

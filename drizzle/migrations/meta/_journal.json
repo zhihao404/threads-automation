@@ -8,6 +8,13 @@
       "when": 1774508685999,
       "tag": "0000_demonic_newton_destine",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1774517615215,
+      "tag": "0001_strong_psynapse",
+      "breakpoints": true
     }
   ]
 }

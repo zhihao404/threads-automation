@@ -18,6 +18,7 @@ import {
   type ReportMetrics,
 } from "@/lib/ai/report";
 import { guardFeatureAccess } from "@/lib/plans/guard";
+import { AIConfigurationError, resolveAIProvider } from "@/lib/ai/provider";
 
 async function getAuthenticatedUserId(): Promise<string | null> {
   const cookieStore = await cookies();
@@ -170,11 +171,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!env.ANTHROPIC_API_KEY) {
-      return NextResponse.json(
-        { error: "AI機能が設定されていません。管理者にお問い合わせください。" },
-        { status: 503 }
-      );
+    const aiConfig = (() => {
+      try {
+        return resolveAIProvider(env);
+      } catch (error) {
+        if (error instanceof AIConfigurationError) {
+          return error;
+        }
+        throw error;
+      }
+    })();
+
+    if (aiConfig instanceof AIConfigurationError) {
+      return NextResponse.json({ error: aiConfig.message }, { status: 503 });
     }
 
     const account = accountRows[0];
@@ -341,7 +350,7 @@ export async function POST(request: NextRequest) {
 
       // Fetch metrics for current period posts
       const postIds = publishedPosts.map((p) => p.id);
-      let metricsMap: Record<
+      const metricsMap: Record<
         string,
         {
           views: number;
@@ -379,7 +388,7 @@ export async function POST(request: NextRequest) {
 
       // Fetch metrics for previous period posts
       const prevPostIds = prevPublishedPosts.map((p) => p.id);
-      let prevMetricsMap: Record<
+      const prevMetricsMap: Record<
         string,
         {
           views: number;
@@ -442,11 +451,6 @@ export async function POST(request: NextRequest) {
 
       // Calculate aggregate metrics
       const totalViews = postsWithMetrics.reduce((s, p) => s + p.views, 0);
-      const totalLikes = postsWithMetrics.reduce((s, p) => s + p.likes, 0);
-      const totalReplies = postsWithMetrics.reduce(
-        (s, p) => s + p.replies,
-        0
-      );
       const totalEngagement = postsWithMetrics.reduce(
         (s, p) => s + p.likes + p.replies + p.reposts + p.quotes,
         0
@@ -584,7 +588,7 @@ export async function POST(request: NextRequest) {
 
       // Generate the report
       const generatedReport = await generateReport(
-        env.ANTHROPIC_API_KEY,
+        aiConfig,
         reportData
       );
 

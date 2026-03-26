@@ -15,6 +15,7 @@ import {
   type CalendarParams,
 } from "@/lib/ai/calendar";
 import type { AccountOverview, PostPerformanceData } from "@/lib/ai/insights";
+import { AIConfigurationError, resolveAIProvider } from "@/lib/ai/provider";
 
 async function getAuthenticatedUserId(): Promise<string | null> {
   const cookieStore = await cookies();
@@ -66,11 +67,19 @@ export async function POST(request: NextRequest) {
     const { env } = await getCloudflareContext({ async: true });
     const db = createDb(env.DB);
 
-    if (!env.ANTHROPIC_API_KEY) {
-      return NextResponse.json(
-        { error: "AI機能が設定されていません。管理者にお問い合わせください。" },
-        { status: 503 }
-      );
+    const aiConfig = (() => {
+      try {
+        return resolveAIProvider(env);
+      } catch (error) {
+        if (error instanceof AIConfigurationError) {
+          return error;
+        }
+        throw error;
+      }
+    })();
+
+    if (aiConfig instanceof AIConfigurationError) {
+      return NextResponse.json({ error: aiConfig.message }, { status: 503 });
     }
 
     // Build account data if accountId provided
@@ -238,7 +247,7 @@ export async function POST(request: NextRequest) {
     };
 
     const suggestions = await generateContentCalendar(
-      env.ANTHROPIC_API_KEY,
+      aiConfig,
       calendarParams
     );
 

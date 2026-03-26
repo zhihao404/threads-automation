@@ -1,18 +1,15 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { parseJsonResponse } from "./json";
+import { generateAIText, type AIProviderConfig } from "./provider";
 
 export async function suggestTopicTags(
-  apiKey: string,
+  config: AIProviderConfig,
   content: string,
   count?: number
 ): Promise<string[]> {
   const tagCount = Math.min(count ?? 5, 10);
 
-  const client = new Anthropic({ apiKey });
-
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 512,
-    system: `あなたはThreads（Meta社のSNS）のトピックタグを提案するアシスタントです。
+  const response = await generateAIText(config, {
+    systemPrompt: `あなたはThreads（Meta社のSNS）のトピックタグを提案するアシスタントです。
 
 ## ルール
 - 投稿内容に関連するトピックタグを提案してください。
@@ -28,34 +25,23 @@ export async function suggestTopicTags(
   "tags": ["タグ1", "タグ2", "タグ3"]
 }
 \`\`\``,
-    messages: [
-      {
-        role: "user",
-        content: `以下の投稿内容に適したトピックタグを${tagCount}件提案してください。
+    userPrompt: `以下の投稿内容に適したトピックタグを${tagCount}件提案してください。
 
 投稿内容:
 ${content}
 
 JSON形式のみで回答してください。`,
-      },
-    ],
+    maxOutputTokens: 512,
+    jsonMode: true,
   });
 
-  const textBlock = response.content.find((block) => block.type === "text");
-  if (!textBlock || textBlock.type !== "text") {
-    return [];
-  }
-
-  let rawText = textBlock.text.trim();
-
-  // Extract JSON from markdown code block if present
-  const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) {
-    rawText = jsonMatch[1].trim();
-  }
-
   try {
-    const parsed = JSON.parse(rawText) as { tags: string[] };
+    const parsed = parseJsonResponse<{ tags: string[] }>(
+      response.text,
+      "AIの応答をJSONとして解析できませんでした",
+      "AIの応答にJSONが見つかりませんでした"
+    );
+
     if (Array.isArray(parsed.tags)) {
       return parsed.tags
         .map((tag: string) => tag.replace(/^#/, "").trim())
@@ -63,21 +49,7 @@ JSON形式のみで回答してください。`,
         .slice(0, tagCount);
     }
   } catch {
-    // Try to find JSON object in the text
-    const objectMatch = rawText.match(/\{[\s\S]*\}/);
-    if (objectMatch) {
-      try {
-        const parsed = JSON.parse(objectMatch[0]) as { tags: string[] };
-        if (Array.isArray(parsed.tags)) {
-          return parsed.tags
-            .map((tag: string) => tag.replace(/^#/, "").trim())
-            .filter((tag: string) => tag.length > 0 && tag.length <= 50)
-            .slice(0, tagCount);
-        }
-      } catch {
-        // Fall through
-      }
-    }
+    return [];
   }
 
   return [];

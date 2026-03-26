@@ -1,4 +1,9 @@
-import Anthropic from "@anthropic-ai/sdk";
+import {
+  generateAIText,
+  type AIProviderConfig,
+  type AITokenUsage,
+} from "./provider";
+import { parseJsonResponse } from "./json";
 
 export type ToneType =
   | "casual"
@@ -176,39 +181,17 @@ function buildUserPrompt(params: GeneratePostParams, count: number): string {
 }
 
 function parseGeneratedPosts(
-  response: Anthropic.Message,
+  rawText: string,
+  usage: AITokenUsage,
   tone: ToneType
 ): GenerateResult {
-  const textBlock = response.content.find((block) => block.type === "text");
-  if (!textBlock || textBlock.type !== "text") {
-    throw new Error("AIからの応答が空です");
-  }
-
-  let rawText = textBlock.text.trim();
-
-  // Extract JSON from markdown code block if present
-  const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) {
-    rawText = jsonMatch[1].trim();
-  }
-
-  let parsed: { posts: Array<{ content: string; topicTag?: string }> };
-
-  try {
-    parsed = JSON.parse(rawText);
-  } catch {
-    // Try to find JSON object in the text
-    const objectMatch = rawText.match(/\{[\s\S]*\}/);
-    if (objectMatch) {
-      try {
-        parsed = JSON.parse(objectMatch[0]);
-      } catch {
-        throw new Error("AIの応答をJSONとして解析できませんでした");
-      }
-    } else {
-      throw new Error("AIの応答にJSONが見つかりませんでした");
-    }
-  }
+  const parsed = parseJsonResponse<
+    { posts: Array<{ content: string; topicTag?: string }> }
+  >(
+    rawText,
+    "AIの応答をJSONとして解析できませんでした",
+    "AIの応答にJSONが見つかりませんでした"
+  );
 
   if (!parsed.posts || !Array.isArray(parsed.posts)) {
     throw new Error("AIの応答に投稿データが含まれていません");
@@ -230,28 +213,27 @@ function parseGeneratedPosts(
   return {
     posts,
     usage: {
-      inputTokens: response.usage.input_tokens,
-      outputTokens: response.usage.output_tokens,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
     },
   };
 }
 
 export async function generatePosts(
-  apiKey: string,
+  config: AIProviderConfig,
   params: GeneratePostParams
 ): Promise<GenerateResult> {
-  const client = new Anthropic({ apiKey });
   const count = Math.min(params.count ?? 3, 5);
 
   const systemPrompt = buildSystemPrompt(params);
   const userPrompt = buildUserPrompt(params, count);
 
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 2048,
-    system: systemPrompt,
-    messages: [{ role: "user", content: userPrompt }],
+  const response = await generateAIText(config, {
+    systemPrompt,
+    userPrompt,
+    maxOutputTokens: 2048,
+    jsonMode: true,
   });
 
-  return parseGeneratedPosts(response, params.tone);
+  return parseGeneratedPosts(response.text, response.usage, params.tone);
 }
