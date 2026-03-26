@@ -118,6 +118,36 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       .first<{ id: string; user_id: string }>();
 
     if (existing) {
+      // Verify the current session user owns this Threads account
+      const cookieStore = await cookies();
+      const sessionToken = cookieStore.get("better-auth.session_token")?.value;
+
+      if (!sessionToken) {
+        return NextResponse.redirect(
+          `${appUrl}/accounts?error=${encodeURIComponent("You must be logged in to connect a Threads account.")}`,
+        );
+      }
+
+      const sessionRow = await db
+        .prepare(
+          "SELECT user_id FROM session WHERE token = ? AND expires_at > ?",
+        )
+        .bind(sessionToken, Math.floor(Date.now() / 1000))
+        .first<{ user_id: string }>();
+
+      if (!sessionRow) {
+        return NextResponse.redirect(
+          `${appUrl}/accounts?error=${encodeURIComponent("Your session has expired. Please log in again.")}`,
+        );
+      }
+
+      // Prevent User B from overwriting User A's token
+      if (existing.user_id !== sessionRow.user_id) {
+        return NextResponse.redirect(
+          `${appUrl}/accounts?error=${encodeURIComponent("This Threads account is already connected to another user.")}`,
+        );
+      }
+
       // Update existing account with new token and profile data
       await db
         .prepare(
@@ -215,12 +245,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   } catch (err) {
     console.error("Threads OAuth callback error:", err);
 
-    const message =
-      err instanceof Error ? err.message : "An unexpected error occurred";
-
     // Clear state cookie on error too
     const errorResponse = NextResponse.redirect(
-      `${appUrl}/accounts?error=${encodeURIComponent(`Failed to connect Threads account: ${message}`)}`,
+      `${appUrl}/accounts?error=${encodeURIComponent("接続に失敗しました")}`,
     );
 
     errorResponse.cookies.set("threads_oauth_state", "", {

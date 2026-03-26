@@ -50,8 +50,8 @@ async function processScheduledPosts(env: Env): Promise<void> {
   console.log(`Found ${duePosts.length} scheduled post(s) due for publishing`);
 
   for (const post of duePosts) {
-    // Update status to "publishing" to prevent duplicate processing
-    await db
+    // Update status to "publishing" to prevent duplicate processing (optimistic lock)
+    const result = await db
       .update(posts)
       .set({ status: "publishing", updatedAt: now })
       .where(
@@ -62,12 +62,17 @@ async function processScheduledPosts(env: Env): Promise<void> {
         ),
       );
 
+    // Only enqueue if we actually acquired the lock (another worker may have already claimed it)
+    if (result.meta.changes === 0) {
+      console.log(`Post ${post.id} already being processed by another worker, skipping`);
+      continue;
+    }
+
     // Send publish job to queue
     const message: PostJobMessage = {
       type: "publish_post",
       postId: post.id,
       accountId: post.accountId,
-      attempt: 0,
     };
 
     await env.POST_QUEUE.send(message);
@@ -206,6 +211,7 @@ async function processRecurringSchedules(env: Env): Promise<void> {
   for (const schedule of dueSchedules) {
     try {
       let content = "";
+      let templateMediaType: "TEXT" | "IMAGE" | "VIDEO" | "CAROUSEL" | undefined;
 
       // Fetch and render template if set
       if (schedule.templateId) {
@@ -222,6 +228,7 @@ async function processRecurringSchedules(env: Env): Promise<void> {
         if (template) {
           const builtinVars = getBuiltinVariableValues();
           content = renderTemplate(template.content, builtinVars);
+          templateMediaType = template.mediaType;
         }
       }
 
@@ -232,7 +239,7 @@ async function processRecurringSchedules(env: Env): Promise<void> {
           id: postId,
           accountId: schedule.accountId,
           content,
-          mediaType: "TEXT",
+          mediaType: templateMediaType || "TEXT",
           status: "scheduled",
           scheduledAt: now,
           createdAt: now,
@@ -279,11 +286,12 @@ async function processRecurringSchedules(env: Env): Promise<void> {
 
 /**
  * Routes a job message to the appropriate handler.
+ * @param queueAttempts - The queue message's attempts count (1-based), used for retry decisions.
  */
-async function processJob(message: JobMessage, env: Env): Promise<void> {
+async function processJob(message: JobMessage, env: Env, queueAttempts: number): Promise<void> {
   switch (message.type) {
     case "publish_post":
-      await handlePublishPost(message, env);
+      await handlePublishPost(message, env, queueAttempts);
       break;
     case "process_queue":
       await handleProcessQueue(message, env);
@@ -294,11 +302,6 @@ async function processJob(message: JobMessage, env: Env): Promise<void> {
     case "refresh_token":
       await handleTokenRefresh(message, env);
       break;
-    case "process_recurring":
-      // Recurring schedules are processed directly by the cron handler,
-      // but this case handles any queue-routed recurring messages.
-      console.log(`Processing recurring schedule job: ${message.scheduleId}`);
-      break;
     default:
       console.error(`Unknown job type: ${(message as JobMessage).type}`);
   }
@@ -306,12 +309,12 @@ async function processJob(message: JobMessage, env: Env): Promise<void> {
 
 /**
  * Calculates the retry delay for a failed job message.
- * Uses exponential backoff based on the attempt count for publish jobs,
+ * Uses exponential backoff based on the queue attempt count for publish jobs,
  * and a fixed 60-second delay for other job types.
  */
-function getJobRetryDelay(message: JobMessage): number {
+function getJobRetryDelay(message: JobMessage, queueAttempts: number): number {
   if (message.type === "publish_post") {
-    return getRetryDelay(message.attempt);
+    return getRetryDelay(queueAttempts);
   }
   // Default retry delay for other job types
   return 60;
@@ -363,12 +366,12 @@ export default {
   ): Promise<void> {
     for (const msg of batch.messages) {
       try {
-        await processJob(msg.body, env);
+        await processJob(msg.body, env, msg.attempts);
         msg.ack();
       } catch (error) {
-        console.error(`Job failed (type=${msg.body.type}):`, error);
+        console.error(`Job failed (type=${msg.body.type}, attempt=${msg.attempts}):`, error);
         // Retry with appropriate delay - Cloudflare Queues handles the retry
-        msg.retry({ delaySeconds: getJobRetryDelay(msg.body) });
+        msg.retry({ delaySeconds: getJobRetryDelay(msg.body, msg.attempts) });
       }
     }
   },

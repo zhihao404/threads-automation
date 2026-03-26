@@ -1,34 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { createDb } from "@/db";
-import { posts, threadsAccounts, session } from "@/db/schema";
-import { eq, and, desc, sql, isNotNull } from "drizzle-orm";
-import { cookies } from "next/headers";
+import { posts, threadsAccounts } from "@/db/schema";
+import { eq, and, desc, isNotNull } from "drizzle-orm";
 import { decryptToken } from "@/lib/threads/encryption";
 import { ThreadsClient } from "@/lib/threads/client";
 import { ThreadsApiError } from "@/lib/threads/types";
-
-async function getAuthenticatedUserId(): Promise<string | null> {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("better-auth.session_token")?.value;
-  if (!sessionToken) return null;
-
-  const { env } = await getCloudflareContext({ async: true });
-  const db = createDb(env.DB);
-
-  const sessions = await db
-    .select({ userId: session.userId })
-    .from(session)
-    .where(
-      and(
-        eq(session.token, sessionToken),
-        sql`${session.expiresAt} > ${Math.floor(Date.now() / 1000)}`
-      )
-    )
-    .limit(1);
-
-  return sessions[0]?.userId ?? null;
-}
+import { getAuthenticatedUserId } from "@/lib/auth-helpers";
 
 interface ReplyData {
   id: string;
@@ -144,7 +122,7 @@ export async function GET(request: NextRequest) {
         }
       }
     } else {
-      // Get all published posts for the account, then fetch replies for each
+      // Get all published posts for the account, then fetch replies in parallel batches
       const publishedPosts = await db
         .select({
           id: posts.id,
@@ -162,34 +140,51 @@ export async function GET(request: NextRequest) {
         .orderBy(desc(posts.publishedAt))
         .limit(50);
 
-      for (const post of publishedPosts) {
-        if (!post.threadsMediaId) continue;
+      const postsWithMedia = publishedPosts.filter(
+        (post): post is typeof post & { threadsMediaId: string } =>
+          post.threadsMediaId !== null
+      );
 
-        try {
-          const repliesResponse = await client.getReplies(post.threadsMediaId);
-          for (const reply of repliesResponse.data) {
-            allReplies.push({
-              id: reply.id,
-              text: reply.text ?? "",
-              username: reply.username ?? "unknown",
-              timestamp: reply.timestamp,
-              permalink: reply.permalink,
-              hideStatus: reply.hide_status ?? "NOT_HUSHED",
-              parentPost: {
-                id: post.id,
-                threadsMediaId: post.threadsMediaId,
-                content: post.content,
-              },
-            });
+      // Process in batches of 5 to avoid hitting Threads API rate limits
+      const batchSize = 5;
+      for (let i = 0; i < postsWithMedia.length; i += batchSize) {
+        if (rateLimited) break;
+
+        const batch = postsWithMedia.slice(i, i + batchSize);
+        const results = await Promise.allSettled(
+          batch.map((post) => client.getReplies(post.threadsMediaId))
+        );
+
+        for (let j = 0; j < results.length; j++) {
+          const result = results[j];
+          const post = batch[j];
+
+          if (result.status === "fulfilled") {
+            for (const reply of result.value.data) {
+              allReplies.push({
+                id: reply.id,
+                text: reply.text ?? "",
+                username: reply.username ?? "unknown",
+                timestamp: reply.timestamp,
+                permalink: reply.permalink,
+                hideStatus: reply.hide_status ?? "NOT_HUSHED",
+                parentPost: {
+                  id: post.id,
+                  threadsMediaId: post.threadsMediaId,
+                  content: post.content,
+                },
+              });
+            }
+          } else {
+            const err = result.reason;
+            if (err instanceof ThreadsApiError && err.isRateLimited) {
+              rateLimited = true;
+              // Stop processing further batches, return partial results
+              break;
+            }
+            // Skip individual post errors (e.g. post deleted on Threads)
+            console.error(`Failed to fetch replies for post ${post.threadsMediaId}:`, err);
           }
-        } catch (err) {
-          if (err instanceof ThreadsApiError && err.isRateLimited) {
-            rateLimited = true;
-            // Stop fetching more posts when rate limited, return partial results
-            break;
-          }
-          // Skip individual post errors (e.g. post deleted on Threads)
-          console.error(`Failed to fetch replies for post ${post.threadsMediaId}:`, err);
         }
       }
     }

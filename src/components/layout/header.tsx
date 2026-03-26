@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Menu, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,13 @@ import { NotificationBell } from "@/components/notifications/notification-bell";
 
 interface HeaderProps {
   onMenuClick: () => void;
+}
+
+interface AccountInfo {
+  id: string;
+  username: string;
+  displayName: string | null;
+  profilePictureUrl: string | null;
 }
 
 const pageTitles: Record<string, string> = {
@@ -33,6 +41,36 @@ const pageTitles: Record<string, string> = {
 
 export function Header({ onMenuClick }: HeaderProps) {
   const pathname = usePathname();
+  const [accounts, setAccounts] = useState<AccountInfo[]>([]);
+
+  useEffect(() => {
+    async function fetchAccounts() {
+      try {
+        const res = await fetch("/api/accounts");
+        if (!res.ok) return;
+        const data: {
+          accounts?: Array<{
+            id: string;
+            username: string;
+            displayName: string | null;
+            profilePictureUrl: string | null;
+          }>;
+        } = await res.json();
+        setAccounts(data.accounts ?? []);
+      } catch {
+        // Silently fail - header will show fallback
+      }
+    }
+    fetchAccounts();
+  }, []);
+
+  const primaryAccount = accounts.length > 0 ? accounts[0] : null;
+  const displayUsername = primaryAccount
+    ? `@${primaryAccount.username}`
+    : "未接続";
+  const avatarFallback = primaryAccount
+    ? primaryAccount.username.slice(0, 2).toUpperCase()
+    : "--";
 
   const pageTitle =
     pageTitles[pathname] ||
@@ -66,20 +104,36 @@ export function Header({ onMenuClick }: HeaderProps) {
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" className="gap-2">
             <Avatar className="h-5 w-5">
-              <AvatarImage src="" alt="Account" />
-              <AvatarFallback className="text-[10px]">TA</AvatarFallback>
+              <AvatarImage
+                src={primaryAccount?.profilePictureUrl ?? undefined}
+                alt="Account"
+              />
+              <AvatarFallback className="text-[10px]">
+                {avatarFallback}
+              </AvatarFallback>
             </Avatar>
-            <span className="hidden sm:inline">@threads_account</span>
+            <span className="hidden sm:inline">{displayUsername}</span>
             <ChevronDown className="h-3 w-3 opacity-50" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuItem>
-            <Avatar className="mr-2 h-5 w-5">
-              <AvatarFallback className="text-[10px]">TA</AvatarFallback>
-            </Avatar>
-            @threads_account
-          </DropdownMenuItem>
+          {accounts.length > 0 ? (
+            accounts.map((acc) => (
+              <DropdownMenuItem key={acc.id}>
+                <Avatar className="mr-2 h-5 w-5">
+                  <AvatarImage src={acc.profilePictureUrl ?? undefined} />
+                  <AvatarFallback className="text-[10px]">
+                    {acc.username.slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                @{acc.username}
+              </DropdownMenuItem>
+            ))
+          ) : (
+            <DropdownMenuItem disabled>
+              アカウント未接続
+            </DropdownMenuItem>
+          )}
           <Separator className="my-1" />
           <DropdownMenuItem asChild>
             <a href="/accounts">Manage accounts</a>

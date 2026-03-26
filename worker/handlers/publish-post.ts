@@ -34,11 +34,16 @@ export function getRetryDelay(attempt: number): number {
  * 4. Waits for container ready (video posts)
  * 5. Publishes the container
  * 6. Updates the post record with the published media ID and permalink
- * 7. On failure: increments retryCount and marks as "failed" if max retries exceeded
+ * 7. On failure: re-throws to let Cloudflare Queues retry, or marks as "failed" on final attempt
+ *
+ * Retry management is delegated to Cloudflare Queues (max_retries in wrangler.toml).
+ * The `queueAttempts` parameter comes from the queue message's `attempts` property
+ * (1-based: 1 = first delivery, 2 = first retry, etc.).
  */
 export async function handlePublishPost(
   message: PostJobMessage,
   env: Env,
+  queueAttempts: number,
 ): Promise<void> {
   const db = createWorkerDb(env.DB);
   const now = new Date();
@@ -188,37 +193,39 @@ export async function handlePublishPost(
 
     console.log(`Post ${message.postId} published successfully as ${publishResult.id}`);
   } catch (error) {
-    // 9. On failure: increment retryCount, if retryCount >= MAX_RETRIES set status "failed"
+    // 9. On failure: let Cloudflare Queues handle retries.
+    // queueAttempts is 1-based (1 = first delivery), so the final attempt is MAX_RETRIES.
     const errorMessage =
       error instanceof Error ? error.message : "Unknown publishing error";
-    const newRetryCount = (post.retryCount ?? 0) + 1;
+    const isFinalAttempt = queueAttempts >= MAX_RETRIES;
 
-    if (newRetryCount >= MAX_RETRIES) {
+    if (isFinalAttempt) {
+      // Final attempt exhausted — mark as permanently failed and do NOT re-throw
+      // so the queue considers the message handled (won't go to DLQ for this reason).
       await db
         .update(posts)
         .set({
           status: "failed",
-          retryCount: newRetryCount,
-          errorMessage: `Failed after ${MAX_RETRIES} attempts: ${errorMessage}`,
+          retryCount: queueAttempts,
+          errorMessage: `Failed after ${queueAttempts} attempts: ${errorMessage}`,
           updatedAt: now,
         })
         .where(eq(posts.id, message.postId));
 
       console.error(
-        `Post ${message.postId} failed permanently after ${MAX_RETRIES} attempts: ${errorMessage}`,
+        `Post ${message.postId} failed permanently after ${queueAttempts} attempts: ${errorMessage}`,
       );
     } else {
-      // Keep status as "publishing" and let the retry mechanism handle it
+      // Not the final attempt — record the error and re-throw to let the queue retry
       await db
         .update(posts)
         .set({
-          retryCount: newRetryCount,
+          retryCount: queueAttempts,
           errorMessage,
           updatedAt: now,
         })
         .where(eq(posts.id, message.postId));
 
-      // Re-throw to trigger Cloudflare Queues retry with backoff
       throw error;
     }
   }

@@ -7,7 +7,6 @@ export type PostJobMessage = {
   type: "publish_post";
   postId: string;
   accountId: string;
-  attempt: number; // 0-based retry count
 };
 
 export type QueueJobMessage = {
@@ -25,14 +24,8 @@ export type TokenRefreshMessage = {
   accountId: string;
 };
 
-export type RecurringScheduleJobMessage = {
-  type: "process_recurring";
-  scheduleId: string;
-};
-
 export type JobMessage =
   | PostJobMessage
   | QueueJobMessage
   | MetricsJobMessage
-  | TokenRefreshMessage
-  | RecurringScheduleJobMessage;
+  | TokenRefreshMessage;

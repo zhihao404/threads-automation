@@ -103,7 +103,7 @@ export default function FollowersPage() {
       }
     }
     fetchAccounts();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedAccountId]);
 
   // Fetch follower data
   const fetchFollowerData = useCallback(async () => {

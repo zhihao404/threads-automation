@@ -1,35 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { createDb } from "@/db";
-import { posts, postMetrics, threadsAccounts, session } from "@/db/schema";
+import { posts, postMetrics, threadsAccounts } from "@/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { ulid } from "ulid";
 import { createPostSchema } from "@/lib/validations/post";
-import { cookies } from "next/headers";
 import { guardPlanLimit } from "@/lib/plans/guard";
 import { incrementUsage } from "@/lib/plans/limits";
-
-async function getAuthenticatedUserId(): Promise<string | null> {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("better-auth.session_token")?.value;
-  if (!sessionToken) return null;
-
-  const { env } = await getCloudflareContext({ async: true });
-  const db = createDb(env.DB);
-
-  const sessions = await db
-    .select({ userId: session.userId })
-    .from(session)
-    .where(
-      and(
-        eq(session.token, sessionToken),
-        sql`${session.expiresAt} > ${Math.floor(Date.now() / 1000)}`
-      )
-    )
-    .limit(1);
-
-  return sessions[0]?.userId ?? null;
-}
+import { getAuthenticatedUserId } from "@/lib/auth-helpers";
 
 export async function GET(request: NextRequest) {
   try {
@@ -47,8 +25,10 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");
     const accountId = searchParams.get("accountId");
-    const limit = Math.min(parseInt(searchParams.get("limit") || "20"), 100);
-    const offset = parseInt(searchParams.get("offset") || "0");
+    const parsedLimit = parseInt(searchParams.get("limit") || "20");
+    const limit = isNaN(parsedLimit) || parsedLimit < 1 ? 20 : Math.min(parsedLimit, 100);
+    const parsedOffset = parseInt(searchParams.get("offset") || "0");
+    const offset = isNaN(parsedOffset) || parsedOffset < 0 ? 0 : Math.min(parsedOffset, 10000);
 
     // Build conditions: only show posts for accounts owned by this user
     const userAccounts = await db

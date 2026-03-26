@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { cookies } from "next/headers";
 import { createDb } from "@/db";
 import {
   session,
@@ -19,28 +18,7 @@ import {
 } from "@/lib/ai/report";
 import { guardFeatureAccess } from "@/lib/plans/guard";
 import { AIConfigurationError, resolveAIProvider } from "@/lib/ai/provider";
-
-async function getAuthenticatedUserId(): Promise<string | null> {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("better-auth.session_token")?.value;
-  if (!sessionToken) return null;
-
-  const { env } = await getCloudflareContext({ async: true });
-  const db = createDb(env.DB);
-
-  const sessions = await db
-    .select({ userId: session.userId })
-    .from(session)
-    .where(
-      and(
-        eq(session.token, sessionToken),
-        sql`${session.expiresAt} > ${Math.floor(Date.now() / 1000)}`
-      )
-    )
-    .limit(1);
-
-  return sessions[0]?.userId ?? null;
-}
+import { getAuthenticatedUserId } from "@/lib/auth-helpers";
 
 function formatDate(date: Date): string {
   const y = date.getFullYear();
@@ -62,7 +40,8 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const accountId = searchParams.get("accountId");
-    const limit = Math.min(parseInt(searchParams.get("limit") || "20"), 50);
+    const parsedLimit = parseInt(searchParams.get("limit") || "20");
+    const limit = isNaN(parsedLimit) || parsedLimit < 1 ? 20 : Math.min(parsedLimit, 50);
 
     // Get user's accounts
     const userAccounts = await db
@@ -626,10 +605,7 @@ export async function POST(request: NextRequest) {
         .update(reports)
         .set({
           status: "failed",
-          summary:
-            genError instanceof Error
-              ? genError.message
-              : "レポート生成に失敗しました",
+          summary: "レポート生成に失敗しました",
         })
         .where(eq(reports.id, reportId));
 
@@ -651,10 +627,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const message =
-      error instanceof Error
-        ? error.message
-        : "レポートの生成に失敗しました";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "処理中にエラーが発生しました" }, { status: 500 });
   }
 }

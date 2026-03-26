@@ -145,7 +145,7 @@ export default function EngagementPage() {
       }
     }
     fetchAccounts();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedAccount]);
 
   const fetchData = useCallback(async () => {
     if (!selectedAccount) return;

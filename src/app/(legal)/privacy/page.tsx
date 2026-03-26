@@ -70,7 +70,7 @@ export default function PrivacyPage() {
               <li>当サービスの提供・運営（投稿管理、スケジュール実行、アナリティクス表示等）</li>
               <li>ユーザー認証およびアカウント管理</li>
               <li>Threads APIを通じた投稿の作成・管理</li>
-              <li>AI機能によるコンテンツ生成（Anthropic Claude APIまたはOpenAI APIへのテキストデータの送信）</li>
+              <li>AI機能によるコンテンツ生成（Anthropic Claude API、OpenAI API、またはGemini APIへのテキストデータの送信）</li>
               <li>決済処理（Stripe経由）</li>
               <li>サービスの改善・新機能の開発</li>
               <li>利用状況の分析</li>
@@ -125,6 +125,19 @@ export default function PrivacyPage() {
                   className="text-primary underline underline-offset-4 hover:text-primary/80"
                 >
                   https://openai.com/policies/privacy-policy
+                </a>{" "}
+                をご参照ください。
+              </li>
+              <li>
+                <strong>Google (Gemini API):</strong> AI機能利用時に、ユーザーが入力したテキストデータを送信します。
+                Googleのプライバシーポリシーは{" "}
+                <a
+                  href="https://policies.google.com/privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary underline underline-offset-4 hover:text-primary/80"
+                >
+                  https://policies.google.com/privacy
                 </a>{" "}
                 をご参照ください。
               </li>

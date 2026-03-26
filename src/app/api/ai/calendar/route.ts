@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { cookies } from "next/headers";
 import { createDb } from "@/db";
 import {
   session,
@@ -15,29 +14,11 @@ import {
   type CalendarParams,
 } from "@/lib/ai/calendar";
 import type { AccountOverview, PostPerformanceData } from "@/lib/ai/insights";
+import { guardPlanLimit } from "@/lib/plans/guard";
+import { incrementUsage } from "@/lib/plans/limits";
 import { AIConfigurationError, resolveAIProvider } from "@/lib/ai/provider";
-
-async function getAuthenticatedUserId(): Promise<string | null> {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("better-auth.session_token")?.value;
-  if (!sessionToken) return null;
-
-  const { env } = await getCloudflareContext({ async: true });
-  const db = createDb(env.DB);
-
-  const sessions = await db
-    .select({ userId: session.userId })
-    .from(session)
-    .where(
-      and(
-        eq(session.token, sessionToken),
-        sql`${session.expiresAt} > ${Math.floor(Date.now() / 1000)}`
-      )
-    )
-    .limit(1);
-
-  return sessions[0]?.userId ?? null;
-}
+import { checkRateLimit } from "@/lib/rate-limit";
+import { getAuthenticatedUserId } from "@/lib/auth-helpers";
 
 export async function POST(request: NextRequest) {
   try {
@@ -66,6 +47,24 @@ export async function POST(request: NextRequest) {
 
     const { env } = await getCloudflareContext({ async: true });
     const db = createDb(env.DB);
+
+    // Rate limiting: 5 requests per minute
+    const rateLimit = await checkRateLimit(db, userId, "ai/calendar", 5, 60_000);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "リクエストが多すぎます。しばらく待ってからお試しください。" },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(Math.ceil((rateLimit.resetAt - Date.now()) / 1000)),
+          },
+        },
+      );
+    }
+
+    // Check plan limit for AI generation
+    const limitResponse = await guardPlanLimit(db, userId, "ai_generation");
+    if (limitResponse) return limitResponse;
 
     const aiConfig = (() => {
       try {
@@ -251,6 +250,8 @@ export async function POST(request: NextRequest) {
       calendarParams
     );
 
+    await incrementUsage(db, userId, "ai_generation");
+
     return NextResponse.json({ suggestions });
   } catch (error: unknown) {
     console.error("POST /api/ai/calendar error:", error);
@@ -271,10 +272,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const message =
-      error instanceof Error
-        ? error.message
-        : "カレンダーの生成に失敗しました";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "処理中にエラーが発生しました" }, { status: 500 });
   }
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import DOMPurify from "dompurify";
 import { useRouter, useParams } from "next/navigation";
 import {
   ArrowLeft,
@@ -91,7 +92,8 @@ export default function ReportDetailPage() {
 
   const handleDownload = () => {
     if (!report?.content) return;
-    const blob = new Blob([report.content], { type: "text/html;charset=utf-8" });
+    const sanitizedContent = DOMPurify.sanitize(report.content);
+    const blob = new Blob([sanitizedContent], { type: "text/html;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -104,9 +106,10 @@ export default function ReportDetailPage() {
 
   const handlePrint = () => {
     if (!report?.content) return;
+    const sanitizedContent = DOMPurify.sanitize(report.content);
     const printWindow = window.open("", "_blank");
     if (printWindow) {
-      printWindow.document.write(report.content);
+      printWindow.document.write(sanitizedContent);
       printWindow.document.close();
       printWindow.onload = () => {
         printWindow.print();

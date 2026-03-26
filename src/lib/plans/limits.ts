@@ -66,20 +66,24 @@ function formatDate(d: Date): string {
 
 /**
  * Get the user's current plan. Falls back to "free" if no active subscription.
+ * Both "active" and "trialing" subscriptions count for paid plan limits.
  */
 export async function getUserPlan(db: Database, userId: string): Promise<PlanType> {
   const rows = await db
-    .select({ plan: subscriptions.plan })
+    .select({ plan: subscriptions.plan, status: subscriptions.status })
     .from(subscriptions)
-    .where(
-      and(
-        eq(subscriptions.userId, userId),
-        eq(subscriptions.status, "active"),
-      ),
-    )
+    .where(eq(subscriptions.userId, userId))
     .limit(1);
 
-  return (rows[0]?.plan as PlanType) ?? "free";
+  const sub = rows[0];
+  if (!sub) return "free";
+
+  // Only count active or trialing subscriptions for paid plans
+  if (sub.status === "active" || sub.status === "trialing") {
+    return sub.plan as PlanType;
+  }
+
+  return "free";
 }
 
 /**
@@ -249,9 +253,9 @@ export async function incrementUsage(
   const period = getCurrentPeriod();
   const validType = type as "post" | "ai_generation" | "schedule" | "template";
 
-  // Try to update existing record first
+  // Try to update existing record first with atomic increment
   const existing = await db
-    .select({ id: usageRecords.id, count: usageRecords.count })
+    .select({ id: usageRecords.id })
     .from(usageRecords)
     .where(
       and(
@@ -263,9 +267,10 @@ export async function incrementUsage(
     .limit(1);
 
   if (existing[0]) {
+    // Atomic increment to avoid race condition
     await db
       .update(usageRecords)
-      .set({ count: existing[0].count + 1 })
+      .set({ count: sql`${usageRecords.count} + 1` })
       .where(eq(usageRecords.id, existing[0].id));
   } else {
     await db.insert(usageRecords).values({

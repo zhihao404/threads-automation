@@ -1,31 +1,9 @@
 import { NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { createDb } from "@/db";
-import { notifications, threadsAccounts, session } from "@/db/schema";
+import { notifications, threadsAccounts } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
-import { cookies } from "next/headers";
-
-async function getAuthenticatedUserId(): Promise<string | null> {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("better-auth.session_token")?.value;
-  if (!sessionToken) return null;
-
-  const { env } = await getCloudflareContext({ async: true });
-  const db = createDb(env.DB);
-
-  const sessions = await db
-    .select({ userId: session.userId })
-    .from(session)
-    .where(
-      and(
-        eq(session.token, sessionToken),
-        sql`${session.expiresAt} > ${Math.floor(Date.now() / 1000)}`
-      )
-    )
-    .limit(1);
-
-  return sessions[0]?.userId ?? null;
-}
+import { getAuthenticatedUserId } from "@/lib/auth-helpers";
 
 // =============================================================================
 // GET /api/notifications/count - Unread notification count

@@ -1,7 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
 
-export type AIProvider = "anthropic" | "openai";
+export type AIProvider = "anthropic" | "openai" | "gemini";
 
 export interface AIProviderConfig {
   provider: AIProvider;
@@ -39,12 +40,15 @@ type AIEnvironment = Partial<
     | "AI_PROVIDER"
     | "ANTHROPIC_API_KEY"
     | "ANTHROPIC_MODEL"
+    | "GEMINI_API_KEY"
+    | "GEMINI_MODEL"
     | "OPENAI_API_KEY"
     | "OPENAI_MODEL"
   >
 >;
 
 const DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6";
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 const DEFAULT_OPENAI_MODEL = "gpt-5-mini";
 
 function normalizeProvider(
@@ -53,7 +57,11 @@ function normalizeProvider(
   if (!value) return undefined;
 
   const normalized = value.trim().toLowerCase();
-  if (normalized === "anthropic" || normalized === "openai") {
+  if (
+    normalized === "anthropic" ||
+    normalized === "openai" ||
+    normalized === "gemini"
+  ) {
     return normalized;
   }
   if (normalized === "auto") {
@@ -61,7 +69,7 @@ function normalizeProvider(
   }
 
   throw new AIConfigurationError(
-    "AI_PROVIDER は 'anthropic'、'openai'、'auto' のいずれかを指定してください。"
+    "AI_PROVIDER は 'anthropic'、'openai'、'gemini'、'auto' のいずれかを指定してください。"
   );
 }
 
@@ -96,6 +104,20 @@ export function resolveAIProvider(env: AIEnvironment): AIProviderConfig {
     };
   }
 
+  if (preferredProvider === "gemini") {
+    if (!env.GEMINI_API_KEY) {
+      throw new AIConfigurationError(
+        "AI_PROVIDER=gemini が指定されていますが、GEMINI_API_KEY が設定されていません。"
+      );
+    }
+
+    return {
+      provider: "gemini",
+      apiKey: env.GEMINI_API_KEY,
+      model: env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
+    };
+  }
+
   if (env.ANTHROPIC_API_KEY) {
     return {
       provider: "anthropic",
@@ -112,8 +134,16 @@ export function resolveAIProvider(env: AIEnvironment): AIProviderConfig {
     };
   }
 
+  if (env.GEMINI_API_KEY) {
+    return {
+      provider: "gemini",
+      apiKey: env.GEMINI_API_KEY,
+      model: env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
+    };
+  }
+
   throw new AIConfigurationError(
-    "AI機能が設定されていません。ANTHROPIC_API_KEY または OPENAI_API_KEY を設定してください。"
+    "AI機能が設定されていません。ANTHROPIC_API_KEY、OPENAI_API_KEY、GEMINI_API_KEY のいずれかを設定してください。"
   );
 }
 
@@ -188,6 +218,40 @@ async function generateWithOpenAI(
   };
 }
 
+async function generateWithGemini(
+  config: AIProviderConfig,
+  options: AITextGenerationOptions
+): Promise<AITextGenerationResult> {
+  const client = new GoogleGenAI({ apiKey: config.apiKey });
+
+  const response = await client.models.generateContent({
+    model: config.model,
+    contents: options.userPrompt,
+    config: {
+      systemInstruction: options.systemPrompt,
+      maxOutputTokens: options.maxOutputTokens,
+      ...(options.jsonMode
+        ? {
+            responseMimeType: "application/json",
+          }
+        : {}),
+    },
+  });
+
+  const text = response.text?.trim();
+  if (!text) {
+    throw new Error("AIからの応答が空です");
+  }
+
+  return {
+    text,
+    usage: {
+      inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
+      outputTokens: response.usageMetadata?.candidatesTokenCount ?? 0,
+    },
+  };
+}
+
 export async function generateAIText(
   config: AIProviderConfig,
   options: AITextGenerationOptions
@@ -196,5 +260,9 @@ export async function generateAIText(
     return generateWithAnthropic(config, options);
   }
 
-  return generateWithOpenAI(config, options);
+  if (config.provider === "openai") {
+    return generateWithOpenAI(config, options);
+  }
+
+  return generateWithGemini(config, options);
 }

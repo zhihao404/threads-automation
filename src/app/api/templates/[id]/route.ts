@@ -1,32 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { createDb } from "@/db";
-import { postTemplates, session } from "@/db/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { postTemplates } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { updateTemplateSchema } from "@/lib/validations/template";
-import { cookies } from "next/headers";
-
-async function getAuthenticatedUserId(): Promise<string | null> {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("better-auth.session_token")?.value;
-  if (!sessionToken) return null;
-
-  const { env } = await getCloudflareContext({ async: true });
-  const db = createDb(env.DB);
-
-  const sessions = await db
-    .select({ userId: session.userId })
-    .from(session)
-    .where(
-      and(
-        eq(session.token, sessionToken),
-        sql`${session.expiresAt} > ${Math.floor(Date.now() / 1000)}`
-      )
-    )
-    .limit(1);
-
-  return sessions[0]?.userId ?? null;
-}
+import { getAuthenticatedUserId } from "@/lib/auth-helpers";
 
 export async function GET(
   _request: NextRequest,

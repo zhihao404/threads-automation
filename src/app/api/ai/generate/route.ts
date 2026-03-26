@@ -1,36 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { cookies } from "next/headers";
 import { createDb } from "@/db";
-import { session } from "@/db/schema";
-import { eq, and, sql } from "drizzle-orm";
+
 import { generatePostSchema } from "@/lib/validations/ai";
 import { generatePosts } from "@/lib/ai/generate";
 import { guardPlanLimit } from "@/lib/plans/guard";
 import { incrementUsage } from "@/lib/plans/limits";
 import { AIConfigurationError, resolveAIProvider } from "@/lib/ai/provider";
-
-async function getAuthenticatedUserId(): Promise<string | null> {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("better-auth.session_token")?.value;
-  if (!sessionToken) return null;
-
-  const { env } = await getCloudflareContext({ async: true });
-  const db = createDb(env.DB);
-
-  const sessions = await db
-    .select({ userId: session.userId })
-    .from(session)
-    .where(
-      and(
-        eq(session.token, sessionToken),
-        sql`${session.expiresAt} > ${Math.floor(Date.now() / 1000)}`
-      )
-    )
-    .limit(1);
-
-  return sessions[0]?.userId ?? null;
-}
+import { checkRateLimit } from "@/lib/rate-limit";
+import { getAuthenticatedUserId } from "@/lib/auth-helpers";
 
 export async function POST(request: NextRequest) {
   try {
@@ -58,6 +36,20 @@ export async function POST(request: NextRequest) {
     const input = parseResult.data;
     const { env } = await getCloudflareContext({ async: true });
     const db = createDb(env.DB);
+
+    // Rate limiting: 10 requests per minute
+    const rateLimit = await checkRateLimit(db, userId, "ai/generate", 10, 60_000);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "リクエストが多すぎます。しばらく待ってからお試しください。" },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(Math.ceil((rateLimit.resetAt - Date.now()) / 1000)),
+          },
+        },
+      );
+    }
 
     // Check plan limit for AI generation
     const limitResponse = await guardPlanLimit(db, userId, "ai_generation");
@@ -113,8 +105,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const message =
-      error instanceof Error ? error.message : "AI生成に失敗しました";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "処理中にエラーが発生しました" }, { status: 500 });
   }
 }

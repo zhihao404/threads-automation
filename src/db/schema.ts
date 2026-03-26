@@ -79,6 +79,7 @@ export const threadsAccounts = sqliteTable(
   },
   (table) => [
     index("threads_accounts_user_id_idx").on(table.userId),
+    uniqueIndex("threads_accounts_threads_user_id_idx").on(table.threadsUserId),
   ],
 );
 
@@ -160,7 +161,7 @@ export const accountMetrics = sqliteTable(
     fetchedAt: integer("fetched_at", { mode: "timestamp" }).notNull(),
   },
   (table) => [
-    index("account_metrics_account_id_date_idx").on(table.accountId, table.date),
+    uniqueIndex("account_metrics_account_id_date_idx").on(table.accountId, table.date),
   ],
 );
 
@@ -390,7 +391,7 @@ export const notifications = sqliteTable(
     accountId: text("account_id")
       .notNull()
       .references(() => threadsAccounts.id, { onDelete: "cascade" }),
-    type: text("type", { enum: ["reply", "mention", "publish", "delete"] }).notNull(),
+    type: text("type", { enum: ["reply", "mention", "publish", "delete", "token_refresh_failed"] }).notNull(),
     title: text("title").notNull(),
     body: text("body"),
     metadata: text("metadata"), // JSON: additional data (permalink, username, etc.)
@@ -432,30 +433,37 @@ export type NewWebhookEvent = typeof webhookEvents.$inferInsert;
 // Subscriptions & Usage tables
 // =============================================================================
 
-export const subscriptions = sqliteTable("subscriptions", {
-  id: text("id").primaryKey(), // ULID
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  stripeCustomerId: text("stripe_customer_id").notNull(),
-  stripeSubscriptionId: text("stripe_subscription_id"),
-  stripePriceId: text("stripe_price_id"),
-  plan: text("plan", { enum: ["free", "pro", "business"] })
-    .notNull()
-    .default("free"),
-  status: text("status", {
-    enum: ["active", "canceled", "past_due", "trialing", "incomplete"],
-  })
-    .notNull()
-    .default("active"),
-  currentPeriodStart: integer("current_period_start", { mode: "timestamp" }),
-  currentPeriodEnd: integer("current_period_end", { mode: "timestamp" }),
-  cancelAtPeriodEnd: integer("cancel_at_period_end", { mode: "boolean" })
-    .notNull()
-    .default(false),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
-});
+export const subscriptions = sqliteTable(
+  "subscriptions",
+  {
+    id: text("id").primaryKey(), // ULID
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    stripeCustomerId: text("stripe_customer_id").notNull(),
+    stripeSubscriptionId: text("stripe_subscription_id"),
+    stripePriceId: text("stripe_price_id"),
+    plan: text("plan", { enum: ["free", "pro", "business"] })
+      .notNull()
+      .default("free"),
+    status: text("status", {
+      enum: ["active", "canceled", "past_due", "trialing", "incomplete"],
+    })
+      .notNull()
+      .default("active"),
+    currentPeriodStart: integer("current_period_start", { mode: "timestamp" }),
+    currentPeriodEnd: integer("current_period_end", { mode: "timestamp" }),
+    cancelAtPeriodEnd: integer("cancel_at_period_end", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("subscriptions_user_id_idx").on(table.userId),
+    uniqueIndex("subscriptions_stripe_subscription_id_idx").on(table.stripeSubscriptionId),
+  ],
+);
 
 export const usageRecords = sqliteTable(
   "usage_records",
@@ -500,3 +508,24 @@ export type NewSubscription = typeof subscriptions.$inferInsert;
 
 export type UsageRecord = typeof usageRecords.$inferSelect;
 export type NewUsageRecord = typeof usageRecords.$inferInsert;
+
+// =============================================================================
+// Rate Limits table
+// =============================================================================
+
+export const rateLimits = sqliteTable(
+  "rate_limits",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    key: text("key").notNull(), // userId or IP
+    endpoint: text("endpoint").notNull(),
+    windowStart: integer("window_start").notNull(), // Unix timestamp in ms
+    count: integer("count").notNull().default(1),
+  },
+  (table) => [
+    uniqueIndex("rate_limits_key_endpoint_idx").on(table.key, table.endpoint),
+  ],
+);
+
+export type RateLimit = typeof rateLimits.$inferSelect;
+export type NewRateLimit = typeof rateLimits.$inferInsert;

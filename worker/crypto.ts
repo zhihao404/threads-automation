@@ -10,6 +10,21 @@ const IV_LENGTH = 12; // 96 bits recommended for AES-GCM
 const SALT_LENGTH = 16;
 
 /**
+ * Converts a Uint8Array to a base64 string using a chunked approach
+ * to avoid "Maximum call stack size exceeded" with large payloads.
+ * Uses Web APIs only (no Node.js Buffer) for Cloudflare Workers compatibility.
+ */
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+/**
  * Derives a CryptoKey from a passphrase string using PBKDF2.
  */
 async function deriveKey(
@@ -102,5 +117,5 @@ export async function encryptTokenWithKey(
   combined.set(iv, salt.length);
   combined.set(new Uint8Array(ciphertext), salt.length + iv.length);
 
-  return btoa(String.fromCharCode(...combined));
+  return uint8ArrayToBase64(combined);
 }

@@ -17,30 +17,10 @@ import {
   subscriptions,
   usageRecords,
 } from "@/db/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
 import { cookies } from "next/headers";
-
-async function getAuthenticatedUserId(): Promise<string | null> {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("better-auth.session_token")?.value;
-  if (!sessionToken) return null;
-
-  const { env } = await getCloudflareContext({ async: true });
-  const db = createDb(env.DB);
-
-  const sessions = await db
-    .select({ userId: session.userId })
-    .from(session)
-    .where(
-      and(
-        eq(session.token, sessionToken),
-        sql`${session.expiresAt} > ${Math.floor(Date.now() / 1000)}`
-      )
-    )
-    .limit(1);
-
-  return sessions[0]?.userId ?? null;
-}
+import { getAuthenticatedUserId } from "@/lib/auth-helpers";
 
 /**
  * GET /api/account - Get user profile and plan info
@@ -243,58 +223,54 @@ export async function DELETE(request: NextRequest) {
 
     const accountIds = userAccounts.map((a) => a.id);
 
-    // Cascading delete of account-related data
+    // Get all post IDs across all accounts (needed for post metrics deletion)
+    let postIds: string[] = [];
     if (accountIds.length > 0) {
-      for (const accountId of accountIds) {
-        // Get all posts for this account
-        const accountPosts = await db
-          .select({ id: posts.id })
-          .from(posts)
-          .where(eq(posts.accountId, accountId));
-
-        const postIds = accountPosts.map((p) => p.id);
-
-        // Delete post metrics
-        if (postIds.length > 0) {
-          for (const postId of postIds) {
-            await db.delete(postMetrics).where(eq(postMetrics.postId, postId));
-          }
-        }
-
-        // Delete queue entries
-        await db.delete(postQueue).where(eq(postQueue.accountId, accountId));
-
-        // Delete posts
-        await db.delete(posts).where(eq(posts.accountId, accountId));
-
-        // Delete account metrics
-        await db.delete(accountMetrics).where(eq(accountMetrics.accountId, accountId));
-
-        // Delete recurring schedules
-        await db.delete(recurringSchedules).where(eq(recurringSchedules.accountId, accountId));
-
-        // Delete reports
-        await db.delete(reports).where(eq(reports.accountId, accountId));
-
-        // Delete notifications
-        await db.delete(notifications).where(eq(notifications.accountId, accountId));
-      }
-
-      // Delete threads accounts
-      await db.delete(threadsAccounts).where(eq(threadsAccounts.userId, userId));
+      const allPosts = await db
+        .select({ id: posts.id })
+        .from(posts)
+        .where(inArray(posts.accountId, accountIds));
+      postIds = allPosts.map((p) => p.id);
     }
 
-    // Delete user-level data
-    await db.delete(postTemplates).where(eq(postTemplates.userId, userId));
-    await db.delete(usageRecords).where(eq(usageRecords.userId, userId));
-    await db.delete(subscriptions).where(eq(subscriptions.userId, userId));
+    // Build all delete operations for atomic batch execution
+    // Order: children first (post_metrics, post_queue), then parents, then user
+    const deleteOps: BatchItem<"sqlite">[] = [];
 
-    // Delete auth data
-    await db.delete(session).where(eq(session.userId, userId));
-    await db.delete(account).where(eq(account.userId, userId));
+    // 1. Delete post metrics for all posts at once (fixes N+1)
+    if (postIds.length > 0) {
+      deleteOps.push(
+        db.delete(postMetrics).where(inArray(postMetrics.postId, postIds))
+      );
+    }
 
-    // Delete user
-    await db.delete(users).where(eq(users.id, userId));
+    // 2. Delete account-scoped data
+    if (accountIds.length > 0) {
+      deleteOps.push(
+        db.delete(postQueue).where(inArray(postQueue.accountId, accountIds)),
+        db.delete(posts).where(inArray(posts.accountId, accountIds)),
+        db.delete(accountMetrics).where(inArray(accountMetrics.accountId, accountIds)),
+        db.delete(recurringSchedules).where(inArray(recurringSchedules.accountId, accountIds)),
+        db.delete(reports).where(inArray(reports.accountId, accountIds)),
+        db.delete(notifications).where(inArray(notifications.accountId, accountIds)),
+        db.delete(threadsAccounts).where(eq(threadsAccounts.userId, userId)),
+      );
+    }
+
+    // 3. Delete user-level data
+    deleteOps.push(
+      db.delete(postTemplates).where(eq(postTemplates.userId, userId)),
+      db.delete(usageRecords).where(eq(usageRecords.userId, userId)),
+      db.delete(subscriptions).where(eq(subscriptions.userId, userId)),
+      db.delete(session).where(eq(session.userId, userId)),
+      db.delete(account).where(eq(account.userId, userId)),
+      db.delete(users).where(eq(users.id, userId)),
+    );
+
+    // Execute all deletes atomically in a single D1 batch
+    await db.batch(
+      deleteOps as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]
+    );
 
     // Clear session cookie
     const cookieStore = await cookies();

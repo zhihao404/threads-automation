@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
+import { and } from "drizzle-orm";
+import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+
+// =============================================================================
+// Authentication helper
+// =============================================================================
+
 // =============================================================================
 // GET /api/media/uploads/{userId}/{filename}
 // Serve uploaded media files from R2 with appropriate caching headers
@@ -11,6 +18,14 @@ export async function GET(
   { params }: { params: Promise<{ key: string[] }> }
 ) {
   try {
+    // -------------------------------------------------------------------------
+    // Authentication check
+    // -------------------------------------------------------------------------
+    const userId = await getAuthenticatedUserId();
+    if (!userId) {
+      return new NextResponse("Unauthorized", { status: 401 });
+    }
+
     const { key } = await params;
 
     // Reconstruct the full object key from the catch-all segments
@@ -59,6 +74,16 @@ export async function GET(
 
     // Set ETag for conditional requests
     headers.set("ETag", object.httpEtag);
+
+    // Security headers
+    headers.set("X-Content-Type-Options", "nosniff");
+
+    // Use inline disposition for images, attachment for everything else
+    if (contentType.startsWith("image/")) {
+      headers.set("Content-Disposition", "inline");
+    } else {
+      headers.set("Content-Disposition", "attachment");
+    }
 
     return new NextResponse(object.body as ReadableStream, {
       status: 200,

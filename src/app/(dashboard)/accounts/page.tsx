@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Plus,
   MoreVertical,
@@ -9,6 +9,7 @@ import {
   Trash2,
   RefreshCw,
   ExternalLink,
+  Loader2,
 } from "lucide-react";
 import {
   Card,
@@ -30,41 +31,21 @@ import {
 
 interface Account {
   id: string;
+  threadsUserId: string;
   username: string;
-  displayName: string;
-  avatarUrl: string;
-  verified: boolean;
-  tokenStatus: "active" | "expiring" | "expired";
-  followers: number;
-  connectedAt: string;
+  displayName: string | null;
+  profilePictureUrl: string | null;
+  biography: string | null;
+  isVerified: boolean;
+  tokenStatus: "valid" | "expiring_soon" | "expired";
+  tokenExpiresAt: string;
+  createdAt: string;
+  updatedAt: string;
 }
-
-const placeholderAccounts: Account[] = [
-  {
-    id: "1",
-    username: "threads_main",
-    displayName: "Main Account",
-    avatarUrl: "",
-    verified: true,
-    tokenStatus: "active",
-    followers: 1829,
-    connectedAt: "Connected 3 days ago",
-  },
-  {
-    id: "2",
-    username: "brand_official",
-    displayName: "Brand Official",
-    avatarUrl: "",
-    verified: false,
-    tokenStatus: "expiring",
-    followers: 542,
-    connectedAt: "Connected 2 weeks ago",
-  },
-];
 
 function getTokenBadge(status: Account["tokenStatus"]) {
   switch (status) {
-    case "active":
+    case "valid":
       return (
         <Badge
           variant="secondary"
@@ -74,7 +55,7 @@ function getTokenBadge(status: Account["tokenStatus"]) {
           Active
         </Badge>
       );
-    case "expiring":
+    case "expiring_soon":
       return (
         <Badge
           variant="secondary"
@@ -94,8 +75,81 @@ function getTokenBadge(status: Account["tokenStatus"]) {
   }
 }
 
+function formatConnectedDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return "Connected today";
+  if (diffDays === 1) return "Connected 1 day ago";
+  if (diffDays < 7) return `Connected ${diffDays} days ago`;
+  if (diffDays < 30) {
+    const weeks = Math.floor(diffDays / 7);
+    return `Connected ${weeks} week${weeks > 1 ? "s" : ""} ago`;
+  }
+  const months = Math.floor(diffDays / 30);
+  return `Connected ${months} month${months > 1 ? "s" : ""} ago`;
+}
+
 export default function AccountsPage() {
-  const [accounts] = useState<Account[]>(placeholderAccounts);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchAccounts() {
+      try {
+        const res = await fetch("/api/accounts");
+        if (!res.ok) throw new Error("Failed to fetch accounts");
+        const data: { accounts: Account[] } = await res.json();
+        setAccounts(data.accounts ?? []);
+      } catch {
+        setError("アカウント情報の取得に失敗しました");
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchAccounts();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">Accounts</h2>
+            <p className="text-muted-foreground">
+              Manage your connected Threads accounts.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">Accounts</h2>
+            <p className="text-muted-foreground">
+              Manage your connected Threads accounts.
+            </p>
+          </div>
+        </div>
+        <Card>
+          <CardContent className="py-10 text-center text-muted-foreground">
+            {error}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -141,17 +195,17 @@ export default function AccountsPage() {
               <CardHeader className="flex flex-row items-start justify-between space-y-0">
                 <div className="flex items-center gap-3">
                   <Avatar className="h-12 w-12">
-                    <AvatarImage src={account.avatarUrl} alt={account.displayName} />
+                    <AvatarImage src={account.profilePictureUrl ?? undefined} alt={account.displayName ?? account.username} />
                     <AvatarFallback>
-                      {account.displayName.slice(0, 2).toUpperCase()}
+                      {(account.displayName ?? account.username).slice(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div>
                     <div className="flex items-center gap-2">
                       <CardTitle className="text-base">
-                        {account.displayName}
+                        {account.displayName ?? account.username}
                       </CardTitle>
-                      {account.verified && (
+                      {account.isVerified && (
                         <CheckCircle2 className="h-4 w-4 text-blue-500" />
                       )}
                     </div>
@@ -165,7 +219,15 @@ export default function AccountsPage() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem className="gap-2">
+                    <DropdownMenuItem
+                      className="gap-2"
+                      onClick={() =>
+                        window.open(
+                          `https://www.threads.net/@${account.username}`,
+                          "_blank"
+                        )
+                      }
+                    >
                       <ExternalLink className="h-4 w-4" />
                       View on Threads
                     </DropdownMenuItem>
@@ -184,11 +246,8 @@ export default function AccountsPage() {
               <CardContent>
                 <div className="flex items-center justify-between">
                   <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">
-                      {account.followers.toLocaleString()} followers
-                    </p>
                     <p className="text-xs text-muted-foreground">
-                      {account.connectedAt}
+                      {formatConnectedDate(account.createdAt)}
                     </p>
                   </div>
                   {getTokenBadge(account.tokenStatus)}

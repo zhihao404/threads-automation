@@ -54,6 +54,21 @@ interface AccountData {
   }>;
 }
 
+interface UsageItem {
+  type: string;
+  current: number;
+  limit: number;
+  remaining: number;
+  isLimited: boolean;
+  percentage: number;
+}
+
+interface UsageData {
+  plan: string;
+  period: { start: string; end: string };
+  usage: UsageItem[];
+}
+
 const planLabels: Record<string, { label: string; color: string }> = {
   free: {
     label: "Free",
@@ -67,6 +82,14 @@ const planLabels: Record<string, { label: string; color: string }> = {
     label: "Business",
     color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
   },
+};
+
+const usageTypeLabels: Record<string, string> = {
+  post: "月間投稿数",
+  ai_generation: "AI生成回数",
+  schedule: "予約投稿数",
+  template: "テンプレート数",
+  account: "接続アカウント",
 };
 
 function getTokenStatus(expiresAt: string): {
@@ -89,9 +112,14 @@ function getTokenStatus(expiresAt: string): {
 
 export default function SettingsPage() {
   const [data, setData] = useState<AccountData | null>(null);
+  const [usageData, setUsageData] = useState<UsageData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // TODO: Notification preferences are stored in local state only.
+  // They are not persisted to the server. A notification preferences API
+  // (e.g. PATCH /api/settings/notifications) needs to be implemented
+  // to save and load these values.
   const [notifications, setNotifications] = useState({
     postPublished: true,
     scheduledReminder: true,
@@ -101,19 +129,27 @@ export default function SettingsPage() {
   });
 
   useEffect(() => {
-    async function fetchAccount() {
+    async function fetchData() {
       try {
-        const res = await fetch("/api/account");
-        if (!res.ok) throw new Error("Failed to fetch account data");
-        const json = (await res.json()) as AccountData;
-        setData(json);
+        const [accountRes, usageRes] = await Promise.all([
+          fetch("/api/account"),
+          fetch("/api/usage"),
+        ]);
+        if (!accountRes.ok) throw new Error("Failed to fetch account data");
+        const accountJson = (await accountRes.json()) as AccountData;
+        setData(accountJson);
+
+        if (usageRes.ok) {
+          const usageJson = (await usageRes.json()) as UsageData;
+          setUsageData(usageJson);
+        }
       } catch {
         setError("アカウント情報の取得に失敗しました");
       } finally {
         setLoading(false);
       }
     }
-    fetchAccount();
+    fetchData();
   }, []);
 
   if (loading) {
@@ -215,33 +251,46 @@ export default function SettingsPage() {
             {/* Usage summary bars */}
             <div className="space-y-3">
               <p className="text-sm font-medium text-muted-foreground">利用状況</p>
-              <UsageBar
-                label="月間投稿数"
-                current={12}
-                limit={subscription.plan === "free" ? 30 : -1}
-              />
-              <UsageBar
-                label="AI生成回数"
-                current={3}
-                limit={
-                  subscription.plan === "free"
-                    ? 10
-                    : subscription.plan === "pro"
-                      ? 100
-                      : -1
-                }
-              />
-              <UsageBar
-                label="接続アカウント"
-                current={accounts.length}
-                limit={
-                  subscription.plan === "free"
-                    ? 1
-                    : subscription.plan === "pro"
-                      ? 3
-                      : 10
-                }
-              />
+              {usageData ? (
+                usageData.usage.map((item) => (
+                  <UsageBar
+                    key={item.type}
+                    label={usageTypeLabels[item.type] ?? item.type}
+                    current={item.current}
+                    limit={item.limit}
+                  />
+                ))
+              ) : (
+                <>
+                  <UsageBar
+                    label="月間投稿数"
+                    current={0}
+                    limit={subscription.plan === "free" ? 30 : -1}
+                  />
+                  <UsageBar
+                    label="AI生成回数"
+                    current={0}
+                    limit={
+                      subscription.plan === "free"
+                        ? 10
+                        : subscription.plan === "pro"
+                          ? 100
+                          : -1
+                    }
+                  />
+                  <UsageBar
+                    label="接続アカウント"
+                    current={accounts.length}
+                    limit={
+                      subscription.plan === "free"
+                        ? 1
+                        : subscription.plan === "pro"
+                          ? 3
+                          : 10
+                    }
+                  />
+                </>
+              )}
             </div>
 
             <Separator />

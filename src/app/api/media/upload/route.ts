@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { createDb } from "@/db";
-import { session } from "@/db/schema";
-import { eq, and, sql } from "drizzle-orm";
-import { cookies } from "next/headers";
+
+import { and } from "drizzle-orm";
 import {
   validateFile,
   generateObjectKey,
@@ -14,33 +13,13 @@ import {
   MAX_VIDEO_SIZE,
 } from "@/lib/media/upload";
 import type { UploadResult } from "@/lib/media/upload";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { getAuthenticatedUserId } from "@/lib/auth-helpers";
 
 // =============================================================================
 // POST /api/media/upload
 // Accept multipart/form-data with file and type fields
 // =============================================================================
-
-async function getAuthenticatedUserId(): Promise<string | null> {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("better-auth.session_token")?.value;
-  if (!sessionToken) return null;
-
-  const { env } = await getCloudflareContext({ async: true });
-  const db = createDb(env.DB);
-
-  const sessions = await db
-    .select({ userId: session.userId })
-    .from(session)
-    .where(
-      and(
-        eq(session.token, sessionToken),
-        sql`${session.expiresAt} > ${Math.floor(Date.now() / 1000)}`
-      )
-    )
-    .limit(1);
-
-  return sessions[0]?.userId ?? null;
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -53,7 +32,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. Parse multipart form data
+    // 2. Rate limiting: 20 requests per minute
+    const { env: rateLimitEnv } = await getCloudflareContext({ async: true });
+    const rateLimitDb = createDb(rateLimitEnv.DB);
+    const rateLimit = await checkRateLimit(rateLimitDb, userId, "media/upload", 20, 60_000);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "リクエストが多すぎます。しばらく待ってからお試しください。" },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(Math.ceil((rateLimit.resetAt - Date.now()) / 1000)),
+          },
+        },
+      );
+    }
+
+    // 3. Parse multipart form data
     let formData: FormData;
     try {
       formData = await request.formData();

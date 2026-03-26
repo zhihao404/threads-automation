@@ -39,9 +39,59 @@ export async function GET(request: NextRequest) {
 // Must respond with 200 quickly to acknowledge receipt
 // =============================================================================
 
+// ---------------------------------------------------------------------------
+// Verify the X-Hub-Signature-256 header from Meta using HMAC-SHA256
+// ---------------------------------------------------------------------------
+async function verifySignature(
+  secret: string,
+  rawBody: string,
+  signatureHeader: string | null,
+): Promise<boolean> {
+  if (!signatureHeader || !signatureHeader.startsWith("sha256=")) {
+    return false;
+  }
+
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    encoder.encode(rawBody),
+  );
+
+  // Convert computed signature to hex string
+  const computedHex = Array.from(new Uint8Array(signature))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  const expectedHex = signatureHeader.slice("sha256=".length);
+
+  // Timing-safe comparison: convert both to ArrayBuffers and use subtle.timingSafeEqual-style
+  // comparison by checking equal-length buffers byte-by-byte with constant-time logic
+  if (computedHex.length !== expectedHex.length) {
+    return false;
+  }
+
+  const computedBytes = encoder.encode(computedHex);
+  const expectedBytes = encoder.encode(expectedHex);
+
+  // Constant-time comparison to prevent timing attacks
+  let diff = 0;
+  for (let i = 0; i < computedBytes.length; i++) {
+    diff |= computedBytes[i] ^ expectedBytes[i];
+  }
+  return diff === 0;
+}
+
 export async function POST(request: NextRequest) {
   const { env } = await getCloudflareContext({ async: true });
-  const db = createDb(env.DB);
 
   let rawBody: string;
   try {
@@ -49,6 +99,21 @@ export async function POST(request: NextRequest) {
   } catch {
     return new Response("Bad Request", { status: 400 });
   }
+
+  // Verify webhook signature from Meta
+  const signatureHeader = request.headers.get("X-Hub-Signature-256");
+  const isValid = await verifySignature(
+    env.THREADS_APP_SECRET,
+    rawBody,
+    signatureHeader,
+  );
+
+  if (!isValid) {
+    console.warn("Webhook signature verification failed");
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const db = createDb(env.DB);
 
   // Store the raw event immediately for audit/debugging
   let eventId: string;

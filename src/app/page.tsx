@@ -556,19 +556,19 @@ export default function LandingPage() {
                 FAQ
               </a>
               <Link
-                href="/legal/terms"
+                href="/terms"
                 className="transition-colors hover:text-foreground"
               >
                 利用規約
               </Link>
               <Link
-                href="/legal/privacy"
+                href="/privacy"
                 className="transition-colors hover:text-foreground"
               >
                 プライバシーポリシー
               </Link>
               <Link
-                href="/legal/commerce"
+                href="/tokushoho"
                 className="transition-colors hover:text-foreground"
               >
                 特定商取引法

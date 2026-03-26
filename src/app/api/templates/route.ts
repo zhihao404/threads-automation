@@ -1,34 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { createDb } from "@/db";
-import { postTemplates, session } from "@/db/schema";
-import { eq, and, desc, sql, like, or } from "drizzle-orm";
+import { postTemplates } from "@/db/schema";
+import { eq, and, desc, sql, or } from "drizzle-orm";
 import { ulid } from "ulid";
 import { createTemplateSchema } from "@/lib/validations/template";
-import { cookies } from "next/headers";
 import { guardPlanLimit } from "@/lib/plans/guard";
-
-async function getAuthenticatedUserId(): Promise<string | null> {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("better-auth.session_token")?.value;
-  if (!sessionToken) return null;
-
-  const { env } = await getCloudflareContext({ async: true });
-  const db = createDb(env.DB);
-
-  const sessions = await db
-    .select({ userId: session.userId })
-    .from(session)
-    .where(
-      and(
-        eq(session.token, sessionToken),
-        sql`${session.expiresAt} > ${Math.floor(Date.now() / 1000)}`
-      )
-    )
-    .limit(1);
-
-  return sessions[0]?.userId ?? null;
-}
+import { getAuthenticatedUserId } from "@/lib/auth-helpers";
 
 export async function GET(request: NextRequest) {
   try {
@@ -46,8 +24,10 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const category = searchParams.get("category");
     const search = searchParams.get("search");
-    const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
-    const offset = parseInt(searchParams.get("offset") || "0");
+    const parsedLimit = parseInt(searchParams.get("limit") || "50");
+    const limit = isNaN(parsedLimit) || parsedLimit < 1 ? 50 : Math.min(parsedLimit, 100);
+    const parsedOffset = parseInt(searchParams.get("offset") || "0");
+    const offset = isNaN(parsedOffset) || parsedOffset < 0 ? 0 : Math.min(parsedOffset, 10000);
 
     const conditions = [eq(postTemplates.userId, userId)];
 
@@ -56,11 +36,12 @@ export async function GET(request: NextRequest) {
     }
 
     if (search) {
-      const searchPattern = `%${search}%`;
+      const escapedSearch = search.replace(/[%_\\]/g, "\\$&");
+      const searchPattern = `%${escapedSearch}%`;
       conditions.push(
         or(
-          like(postTemplates.name, searchPattern),
-          like(postTemplates.content, searchPattern)
+          sql`${postTemplates.name} LIKE ${searchPattern} ESCAPE '\\'`,
+          sql`${postTemplates.content} LIKE ${searchPattern} ESCAPE '\\'`
         )!
       );
     }

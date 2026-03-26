@@ -1,36 +1,13 @@
 import { NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { cookies } from "next/headers";
-import { and, eq, sql } from "drizzle-orm";
 import { createDb } from "@/db";
-import { session } from "@/db/schema";
+
 import { createStripeClient } from "@/lib/stripe/config";
+import { getAuthenticatedUserId } from "@/lib/auth-helpers";
 import {
   getUserSubscription,
   createPortalSession,
 } from "@/lib/stripe/subscription";
-
-async function getAuthenticatedUserId(): Promise<string | null> {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("better-auth.session_token")?.value;
-  if (!sessionToken) return null;
-
-  const { env } = await getCloudflareContext({ async: true });
-  const db = createDb(env.DB);
-
-  const sessions = await db
-    .select({ userId: session.userId })
-    .from(session)
-    .where(
-      and(
-        eq(session.token, sessionToken),
-        sql`${session.expiresAt} > ${Math.floor(Date.now() / 1000)}`,
-      ),
-    )
-    .limit(1);
-
-  return sessions[0]?.userId ?? null;
-}
 
 export async function POST() {
   try {

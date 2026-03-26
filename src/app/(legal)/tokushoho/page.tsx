@@ -180,7 +180,7 @@ export default function TokushohoPage() {
                     サービスの一部機能が制限される場合があります。
                   </li>
                   <li>
-                    AI機能はAnthropic社のClaude APIまたはOpenAI APIを利用しています。
+                    AI機能はAnthropic社のClaude API、OpenAI API、またはGemini APIを利用しています。
                   </li>
                   <li>
                     詳しい利用条件については

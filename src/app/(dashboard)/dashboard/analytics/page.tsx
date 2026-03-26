@@ -266,8 +266,7 @@ export default function AnalyticsPage() {
       }
     }
     fetchAccounts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [selectedAccountId]);
 
   // Fetch overview data
   const fetchOverview = useCallback(async () => {

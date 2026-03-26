@@ -3,7 +3,7 @@
 // Collects post and profile insights from the Threads API
 // =============================================================================
 
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, lt, sql } from "drizzle-orm";
 import { ulid } from "ulid";
 import type { MetricsJobMessage } from "../../src/lib/queue/types";
 import type { Env } from "../types";
@@ -158,6 +158,53 @@ export async function handleCollectMetrics(
   } catch (err) {
     console.error(
       `Failed to collect profile insights for account ${message.accountId}:`,
+      err,
+    );
+  }
+
+  // 6. Cleanup old postMetrics to prevent unbounded growth
+  try {
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    // Step 1: Delete all postMetrics rows older than 90 days
+    await db.run(sql`
+      DELETE FROM post_metrics
+      WHERE fetched_at < ${Math.floor(ninetyDaysAgo.getTime() / 1000)}
+        AND post_id IN (
+          SELECT id FROM posts WHERE account_id = ${message.accountId}
+        )
+    `);
+
+    // Step 2: For rows between 30-90 days old, keep only the latest per day per post
+    await db.run(sql`
+      DELETE FROM post_metrics
+      WHERE fetched_at >= ${Math.floor(ninetyDaysAgo.getTime() / 1000)}
+        AND fetched_at < ${Math.floor(thirtyDaysAgo.getTime() / 1000)}
+        AND post_id IN (
+          SELECT id FROM posts WHERE account_id = ${message.accountId}
+        )
+        AND id NOT IN (
+          SELECT id FROM (
+            SELECT id,
+              ROW_NUMBER() OVER (
+                PARTITION BY post_id, DATE(fetched_at, 'unixepoch')
+                ORDER BY fetched_at DESC
+              ) AS rn
+            FROM post_metrics
+            WHERE fetched_at >= ${Math.floor(ninetyDaysAgo.getTime() / 1000)}
+              AND fetched_at < ${Math.floor(thirtyDaysAgo.getTime() / 1000)}
+              AND post_id IN (
+                SELECT id FROM posts WHERE account_id = ${message.accountId}
+              )
+          ) WHERE rn = 1
+        )
+    `);
+
+    console.log(`Cleaned up old post metrics for account ${message.accountId}`);
+  } catch (err) {
+    console.error(
+      `Failed to clean up old post metrics for account ${message.accountId}:`,
       err,
     );
   }

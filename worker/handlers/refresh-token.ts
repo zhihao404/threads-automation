@@ -7,8 +7,9 @@ import { eq } from "drizzle-orm";
 import type { TokenRefreshMessage } from "../../src/lib/queue/types";
 import type { Env } from "../types";
 import { createWorkerDb } from "../db";
-import { threadsAccounts } from "../../src/db/schema";
+import { threadsAccounts, notifications } from "../../src/db/schema";
 import { decryptTokenWithKey, encryptTokenWithKey } from "../crypto";
+import { ulid } from "ulid";
 
 const THREADS_LONG_LIVED_TOKEN_URL = "https://graph.threads.net/access_token";
 
@@ -87,6 +88,22 @@ export async function handleTokenRefresh(
     );
   } catch (err) {
     console.error(`Failed to refresh token for account ${message.accountId}:`, err);
+
+    // Notify the user that their token refresh failed
+    try {
+      await db.insert(notifications).values({
+        id: ulid(),
+        accountId: message.accountId,
+        type: "token_refresh_failed",
+        title: "Threadsアカウントの再接続が必要です",
+        body: `アクセストークンの更新に失敗しました。設定画面からThreadsアカウントを再接続してください。`,
+        isRead: false,
+        createdAt: now,
+      });
+    } catch (notifErr) {
+      console.error(`Failed to insert token refresh failure notification:`, notifErr);
+    }
+
     // Don't re-throw - token refresh failure is logged but shouldn't crash the worker
   }
 }
