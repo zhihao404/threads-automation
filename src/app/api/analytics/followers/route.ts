@@ -7,7 +7,7 @@ import { getAuthenticatedUserId } from "@/lib/auth-helpers";
 
 function parsePeriodDays(period: string): number {
   const match = period.match(/^(\d+)d$/);
-  if (match) {
+  if (match?.[1]) {
     const days = parseInt(match[1], 10);
     return Math.min(365, Math.max(1, days));
   }
@@ -96,8 +96,8 @@ export async function GET(request: NextRequest) {
     }> = [];
 
     for (let i = 0; i < dailyMetrics.length; i++) {
-      const current = dailyMetrics[i];
-      const previous = i > 0 ? dailyMetrics[i - 1] : null;
+      const current = dailyMetrics[i]!;
+      const previous = i > 0 ? dailyMetrics[i - 1]! : null;
       const change = previous
         ? current.followersCount - previous.followersCount
         : 0;
@@ -112,10 +112,10 @@ export async function GET(request: NextRequest) {
     // Calculate summary
     const latestFollowers =
       dailyMetrics.length > 0
-        ? dailyMetrics[dailyMetrics.length - 1].followersCount
+        ? dailyMetrics[dailyMetrics.length - 1]!.followersCount
         : 0;
     const startFollowers =
-      dailyMetrics.length > 0 ? dailyMetrics[0].followersCount : 0;
+      dailyMetrics.length > 0 ? dailyMetrics[0]!.followersCount : 0;
     const totalChange = latestFollowers - startFollowers;
     const changePercent =
       startFollowers > 0

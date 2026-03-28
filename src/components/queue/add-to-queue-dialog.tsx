@@ -203,7 +203,7 @@ export function AddToQueueDialog({
               {drafts.map((draft) => {
                 const isSelected = selectedIds.has(draft.id);
                 const MediaIcon =
-                  mediaTypeIcons[draft.mediaType] || mediaTypeIcons.TEXT;
+                  mediaTypeIcons[draft.mediaType] ?? mediaTypeIcons["TEXT"]!;
 
                 return (
                   <button

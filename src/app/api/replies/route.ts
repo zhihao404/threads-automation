@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { createDb } from "@/db";
 import { posts, threadsAccounts } from "@/db/schema";
 import { eq, and, desc, isNotNull } from "drizzle-orm";
 import { decryptToken } from "@/lib/threads/encryption";
 import { ThreadsClient } from "@/lib/threads/client";
 import { ThreadsApiError } from "@/lib/threads/types";
-import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+import { getAuthenticatedAccountContext } from "@/lib/auth-helpers";
+import { apiError } from "@/lib/api-response";
 
 interface ReplyData {
   id: string;
@@ -24,46 +23,28 @@ interface ReplyData {
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = await getAuthenticatedUserId();
-    if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 }
-      );
-    }
-
-    const { env } = await getCloudflareContext({ async: true });
-    const db = createDb(env.DB);
-
     const { searchParams } = new URL(request.url);
     const accountId = searchParams.get("accountId");
     const postId = searchParams.get("postId");
 
     if (!accountId) {
-      return NextResponse.json(
-        { error: "accountId は必須です" },
-        { status: 400 }
-      );
+      return apiError("accountId は必須です", 400);
     }
 
-    // Verify the account belongs to this user
+    const authResult = await getAuthenticatedAccountContext(accountId);
+    if (authResult instanceof NextResponse) return authResult;
+    const { db } = authResult;
+
+    // Get account details for token decryption
     const accountRows = await db
       .select()
       .from(threadsAccounts)
-      .where(
-        and(
-          eq(threadsAccounts.id, accountId),
-          eq(threadsAccounts.userId, userId)
-        )
-      )
+      .where(eq(threadsAccounts.id, accountId))
       .limit(1);
 
     const account = accountRows[0];
     if (!account) {
-      return NextResponse.json(
-        { error: "アカウントが見つかりません" },
-        { status: 404 }
-      );
+      return apiError("アカウントが見つかりません", 404);
     }
 
     const accessToken = await decryptToken(account.accessToken);
@@ -91,10 +72,7 @@ export async function GET(request: NextRequest) {
 
       const parentPost = postRow[0];
       if (!parentPost || !parentPost.threadsMediaId) {
-        return NextResponse.json(
-          { error: "投稿が見つかりません" },
-          { status: 404 }
-        );
+        return apiError("投稿が見つかりません", 404);
       }
 
       try {
@@ -156,8 +134,8 @@ export async function GET(request: NextRequest) {
         );
 
         for (let j = 0; j < results.length; j++) {
-          const result = results[j];
-          const post = batch[j];
+          const result = results[j]!;
+          const post = batch[j]!;
 
           if (result.status === "fulfilled") {
             for (const reply of result.value.data) {
@@ -201,9 +179,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("GET /api/replies error:", error);
-    return NextResponse.json(
-      { error: "リプライの取得に失敗しました" },
-      { status: 500 }
-    );
+    return apiError("リプライの取得に失敗しました", 500);
   }
 }

@@ -24,8 +24,15 @@ export type TokenRefreshMessage = {
   accountId: string;
 };
 
+export type GenerateReportMessage = {
+  type: "generate_report";
+  reportId: string;
+  accountId: string;
+};
+
 export type JobMessage =
   | PostJobMessage
   | QueueJobMessage
   | MetricsJobMessage
-  | TokenRefreshMessage;
+  | TokenRefreshMessage
+  | GenerateReportMessage;

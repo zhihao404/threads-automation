@@ -7,9 +7,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { createDb } from "@/db";
 import { posts, threadsAccounts } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+import { apiError } from "@/lib/api-response";
 
 const updateScheduleSchema = z.discriminatedUnion("action", [
   z.object({
@@ -28,10 +29,7 @@ export async function PATCH(
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 },
-      );
+      return apiError("認証が必要です", 401);
     }
 
     const { id } = await params;
@@ -39,10 +37,7 @@ export async function PATCH(
     const parseResult = updateScheduleSchema.safeParse(body);
 
     if (!parseResult.success) {
-      return NextResponse.json(
-        { error: "入力内容に誤りがあります", details: parseResult.error.flatten() },
-        { status: 400 },
-      );
+      return apiError("入力内容に誤りがあります", 400);
     }
 
     const input = parseResult.data;
@@ -64,17 +59,11 @@ export async function PATCH(
 
     const post = postRows[0];
     if (!post) {
-      return NextResponse.json(
-        { error: "投稿が見つかりません" },
-        { status: 404 },
-      );
+      return apiError("投稿が見つかりません", 404);
     }
 
     if (post.accountUserId !== userId) {
-      return NextResponse.json(
-        { error: "アクセス権がありません" },
-        { status: 403 },
-      );
+      return apiError("アクセス権がありません", 403);
     }
 
     const now = new Date();
@@ -82,10 +71,7 @@ export async function PATCH(
     if (input.action === "cancel") {
       // Can only cancel scheduled or queued posts
       if (post.status !== "scheduled" && post.status !== "queued") {
-        return NextResponse.json(
-          { error: "この投稿のスケジュールはキャンセルできません" },
-          { status: 400 },
-        );
+        return apiError("この投稿のスケジュールはキャンセルできません", 400);
       }
 
       await db
@@ -103,20 +89,19 @@ export async function PATCH(
     // action === "update"
     // Can only update draft or scheduled posts
     if (post.status !== "draft" && post.status !== "scheduled") {
-      return NextResponse.json(
-        { error: "この投稿のスケジュールは変更できません" },
-        { status: 400 },
-      );
+      return apiError("この投稿のスケジュールは変更できません", 400);
     }
 
     const scheduledAt = new Date(input.scheduledAt);
 
+    // Validate that the date is valid
+    if (isNaN(scheduledAt.getTime())) {
+      return apiError("無効な日付形式です", 400);
+    }
+
     // Validate that the scheduled time is in the future
     if (scheduledAt <= now) {
-      return NextResponse.json(
-        { error: "予約日時は現在より後の日時を指定してください" },
-        { status: 400 },
-      );
+      return apiError("予約日時は現在より後の日時を指定してください", 400);
     }
 
     await db
@@ -135,9 +120,6 @@ export async function PATCH(
     });
   } catch (error) {
     console.error("PATCH /api/posts/[id]/schedule error:", error);
-    return NextResponse.json(
-      { error: "スケジュールの更新に失敗しました" },
-      { status: 500 },
-    );
+    return apiError("スケジュールの更新に失敗しました", 500);
   }
 }

@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { createDb } from "@/db";
 import { posts, postQueue, threadsAccounts } from "@/db/schema";
 import { eq, and, sql, asc } from "drizzle-orm";
 import { ulid } from "ulid";
-import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+import { getAuthenticatedAccountContext, getAuthContext } from "@/lib/auth-helpers";
+import { apiError } from "@/lib/api-response";
 
 /**
  * GET /api/queue?accountId=xxx
@@ -12,45 +11,16 @@ import { getAuthenticatedUserId } from "@/lib/auth-helpers";
  */
 export async function GET(request: NextRequest) {
   try {
-    const userId = await getAuthenticatedUserId();
-    if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 }
-      );
-    }
-
     const { searchParams } = new URL(request.url);
     const accountId = searchParams.get("accountId");
 
     if (!accountId) {
-      return NextResponse.json(
-        { error: "accountIdが必要です" },
-        { status: 400 }
-      );
+      return apiError("accountIdが必要です", 400);
     }
 
-    const { env } = await getCloudflareContext({ async: true });
-    const db = createDb(env.DB);
-
-    // Verify the account belongs to this user
-    const accountRows = await db
-      .select({ id: threadsAccounts.id })
-      .from(threadsAccounts)
-      .where(
-        and(
-          eq(threadsAccounts.id, accountId),
-          eq(threadsAccounts.userId, userId)
-        )
-      )
-      .limit(1);
-
-    if (!accountRows[0]) {
-      return NextResponse.json(
-        { error: "アカウントが見つかりません" },
-        { status: 404 }
-      );
-    }
+    const result = await getAuthenticatedAccountContext(accountId);
+    if (result instanceof NextResponse) return result;
+    const { db, env } = result;
 
     // Get queue items with post data, ordered by position
     const queueItems = await db
@@ -93,10 +63,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ items: queueItems, settings });
   } catch (error) {
     console.error("GET /api/queue error:", error);
-    return NextResponse.json(
-      { error: "キューの取得に失敗しました" },
-      { status: 500 }
-    );
+    return apiError("キューの取得に失敗しました", 500);
   }
 }
 
@@ -107,14 +74,6 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const userId = await getAuthenticatedUserId();
-    if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 }
-      );
-    }
-
     const body = (await request.json()) as {
       postId?: string;
       accountId?: string;
@@ -123,33 +82,12 @@ export async function POST(request: NextRequest) {
     const { postId, accountId, position: requestedPosition } = body;
 
     if (!postId || !accountId) {
-      return NextResponse.json(
-        { error: "postIdとaccountIdが必要です" },
-        { status: 400 }
-      );
+      return apiError("postIdとaccountIdが必要です", 400);
     }
 
-    const { env } = await getCloudflareContext({ async: true });
-    const db = createDb(env.DB);
-
-    // Verify the account belongs to this user
-    const accountRows = await db
-      .select({ id: threadsAccounts.id })
-      .from(threadsAccounts)
-      .where(
-        and(
-          eq(threadsAccounts.id, accountId),
-          eq(threadsAccounts.userId, userId)
-        )
-      )
-      .limit(1);
-
-    if (!accountRows[0]) {
-      return NextResponse.json(
-        { error: "アカウントが見つかりません" },
-        { status: 404 }
-      );
-    }
+    const result = await getAuthenticatedAccountContext(accountId);
+    if (result instanceof NextResponse) return result;
+    const { db } = result;
 
     // Verify the post exists and belongs to this account
     const postRows = await db
@@ -160,17 +98,11 @@ export async function POST(request: NextRequest) {
 
     const post = postRows[0];
     if (!post) {
-      return NextResponse.json(
-        { error: "投稿が見つかりません" },
-        { status: 404 }
-      );
+      return apiError("投稿が見つかりません", 404);
     }
 
     if (post.accountId !== accountId) {
-      return NextResponse.json(
-        { error: "この投稿はこのアカウントに属していません" },
-        { status: 400 }
-      );
+      return apiError("この投稿はこのアカウントに属していません", 400);
     }
 
     // Check if the post is already in the queue
@@ -181,28 +113,13 @@ export async function POST(request: NextRequest) {
       .limit(1);
 
     if (existingQueue[0]) {
-      return NextResponse.json(
-        { error: "この投稿は既にキューに追加されています" },
-        { status: 409 }
-      );
+      return apiError("この投稿は既にキューに追加されています", 409);
     }
 
     // Determine position
     let nextPosition: number;
     if (requestedPosition !== undefined && requestedPosition >= 0) {
       nextPosition = requestedPosition;
-      // Shift existing items at or after this position
-      await db
-        .update(postQueue)
-        .set({
-          position: sql`${postQueue.position} + 1`,
-        })
-        .where(
-          and(
-            eq(postQueue.accountId, accountId),
-            sql`${postQueue.position} >= ${nextPosition}`
-          )
-        );
     } else {
       // Add to end of queue
       const maxPositionResult = await db
@@ -216,19 +133,44 @@ export async function POST(request: NextRequest) {
     const now = new Date();
     const queueEntryId = ulid();
 
-    // Insert queue entry and update post status
-    await db.insert(postQueue).values({
-      id: queueEntryId,
-      accountId,
-      postId,
-      position: nextPosition,
-      createdAt: now,
-    });
+    // Batch: shift positions (if needed), insert queue entry, update post status
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const batchOps: any[] = [];
 
-    await db
-      .update(posts)
-      .set({ status: "queued", updatedAt: now })
-      .where(eq(posts.id, postId));
+    if (requestedPosition !== undefined && requestedPosition >= 0) {
+      batchOps.push(
+        db
+          .update(postQueue)
+          .set({
+            position: sql`${postQueue.position} + 1`,
+          })
+          .where(
+            and(
+              eq(postQueue.accountId, accountId),
+              sql`${postQueue.position} >= ${nextPosition}`
+            )
+          )
+      );
+    }
+
+    batchOps.push(
+      db.insert(postQueue).values({
+        id: queueEntryId,
+        accountId,
+        postId,
+        position: nextPosition,
+        createdAt: now,
+      })
+    );
+
+    batchOps.push(
+      db
+        .update(posts)
+        .set({ status: "queued", updatedAt: now })
+        .where(eq(posts.id, postId))
+    );
+
+    await db.batch(batchOps as [typeof batchOps[0], ...typeof batchOps]);
 
     return NextResponse.json(
       { id: queueEntryId, position: nextPosition },
@@ -236,10 +178,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     console.error("POST /api/queue error:", error);
-    return NextResponse.json(
-      { error: "キューへの追加に失敗しました" },
-      { status: 500 }
-    );
+    return apiError("キューへの追加に失敗しました", 500);
   }
 }
 
@@ -250,13 +189,9 @@ export async function POST(request: NextRequest) {
  */
 export async function PATCH(request: NextRequest) {
   try {
-    const userId = await getAuthenticatedUserId();
-    if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 }
-      );
-    }
+    const authResult = await getAuthContext();
+    if (authResult instanceof NextResponse) return authResult;
+    const { userId, db } = authResult;
 
     const body = (await request.json()) as {
       items?: Array<{ id: string; position: number }>;
@@ -264,14 +199,8 @@ export async function PATCH(request: NextRequest) {
     const { items } = body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
-      return NextResponse.json(
-        { error: "itemsが必要です" },
-        { status: 400 }
-      );
+      return apiError("itemsが必要です", 400);
     }
-
-    const { env } = await getCloudflareContext({ async: true });
-    const db = createDb(env.DB);
 
     // Verify all queue items belong to accounts owned by this user
     const queueItemIds = items.map((item) => item.id);
@@ -291,19 +220,13 @@ export async function PATCH(request: NextRequest) {
       );
 
     if (queueRows.length !== items.length) {
-      return NextResponse.json(
-        { error: "一部のキューアイテムが見つかりません" },
-        { status: 404 }
-      );
+      return apiError("一部のキューアイテムが見つかりません", 404);
     }
 
     // Verify ownership
     for (const row of queueRows) {
       if (row.accountUserId !== userId) {
-        return NextResponse.json(
-          { error: "アクセス権がありません" },
-          { status: 403 }
-        );
+        return apiError("アクセス権がありません", 403);
       }
     }
 
@@ -320,10 +243,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("PATCH /api/queue error:", error);
-    return NextResponse.json(
-      { error: "キューの並び替えに失敗しました" },
-      { status: 500 }
-    );
+    return apiError("キューの並び替えに失敗しました", 500);
   }
 }
 
@@ -333,45 +253,16 @@ export async function PATCH(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const userId = await getAuthenticatedUserId();
-    if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 }
-      );
-    }
-
     const body = (await request.json()) as { accountId?: string };
     const { accountId } = body;
 
     if (!accountId) {
-      return NextResponse.json(
-        { error: "accountIdが必要です" },
-        { status: 400 }
-      );
+      return apiError("accountIdが必要です", 400);
     }
 
-    const { env } = await getCloudflareContext({ async: true });
-    const db = createDb(env.DB);
-
-    // Verify the account belongs to this user
-    const accountRows = await db
-      .select({ id: threadsAccounts.id })
-      .from(threadsAccounts)
-      .where(
-        and(
-          eq(threadsAccounts.id, accountId),
-          eq(threadsAccounts.userId, userId)
-        )
-      )
-      .limit(1);
-
-    if (!accountRows[0]) {
-      return NextResponse.json(
-        { error: "アカウントが見つかりません" },
-        { status: 404 }
-      );
-    }
+    const result = await getAuthenticatedAccountContext(accountId);
+    if (result instanceof NextResponse) return result;
+    const { db } = result;
 
     // Get all queue items for this account to update post statuses
     const queueItems = await db
@@ -383,27 +274,24 @@ export async function DELETE(request: NextRequest) {
       const now = new Date();
       const postIds = queueItems.map((item) => item.postId);
 
-      // Update all posts back to draft
-      await db
-        .update(posts)
-        .set({ status: "draft", updatedAt: now })
-        .where(
-          sql`${posts.id} IN (${sql.join(
-            postIds.map((id) => sql`${id}`),
-            sql`, `
-          )})`
-        );
-
-      // Delete all queue items for this account
-      await db.delete(postQueue).where(eq(postQueue.accountId, accountId));
+      // Batch: update all posts back to draft + delete all queue items
+      await db.batch([
+        db
+          .update(posts)
+          .set({ status: "draft", updatedAt: now })
+          .where(
+            sql`${posts.id} IN (${sql.join(
+              postIds.map((id) => sql`${id}`),
+              sql`, `
+            )})`
+          ),
+        db.delete(postQueue).where(eq(postQueue.accountId, accountId)),
+      ]);
     }
 
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("DELETE /api/queue error:", error);
-    return NextResponse.json(
-      { error: "キューのクリアに失敗しました" },
-      { status: 500 }
-    );
+    return apiError("キューのクリアに失敗しました", 500);
   }
 }

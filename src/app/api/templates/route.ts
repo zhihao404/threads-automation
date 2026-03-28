@@ -7,15 +7,13 @@ import { ulid } from "ulid";
 import { createTemplateSchema } from "@/lib/validations/template";
 import { guardPlanLimit } from "@/lib/plans/guard";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+import { apiError } from "@/lib/api-response";
 
 export async function GET(request: NextRequest) {
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 }
-      );
+      return apiError("認証が必要です", 401);
     }
 
     const { env } = await getCloudflareContext({ async: true });
@@ -79,10 +77,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ templates, total, categories });
   } catch (error) {
     console.error("GET /api/templates error:", error);
-    return NextResponse.json(
-      { error: "テンプレートの取得に失敗しました" },
-      { status: 500 }
-    );
+    return apiError("テンプレートの取得に失敗しました", 500);
   }
 }
 
@@ -90,20 +85,14 @@ export async function POST(request: NextRequest) {
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 }
-      );
+      return apiError("認証が必要です", 401);
     }
 
     const body = await request.json();
     const parseResult = createTemplateSchema.safeParse(body);
 
     if (!parseResult.success) {
-      return NextResponse.json(
-        { error: "入力内容に誤りがあります", details: parseResult.error.flatten() },
-        { status: 400 }
-      );
+      return apiError("入力内容に誤りがあります", 400);
     }
 
     const input = parseResult.data;
@@ -140,9 +129,6 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     console.error("POST /api/templates error:", error);
-    return NextResponse.json(
-      { error: "テンプレートの作成に失敗しました" },
-      { status: 500 }
-    );
+    return apiError("テンプレートの作成に失敗しました", 500);
   }
 }

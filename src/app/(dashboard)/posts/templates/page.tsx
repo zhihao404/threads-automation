@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +19,6 @@ import {
   Plus,
   Search,
   FileText,
-  Loader2,
 } from "lucide-react";
 
 type MediaType = "TEXT" | "IMAGE" | "VIDEO" | "CAROUSEL";
@@ -110,7 +110,7 @@ export default function TemplatesPage() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const fetchTemplates = useCallback(async () => {
+  const fetchTemplates = useCallback(async (signal?: { cancelled: boolean }) => {
     setIsLoading(true);
     setError("");
 
@@ -121,23 +121,32 @@ export default function TemplatesPage() {
       params.set("limit", "100");
 
       const response = await fetch(`/api/templates?${params.toString()}`);
+      if (signal?.cancelled) return;
       if (!response.ok) {
         throw new Error("テンプレートの取得に失敗しました");
       }
       const data = (await response.json()) as FetchResult;
+      if (signal?.cancelled) return;
       setTemplates(data.templates || []);
       setTotal(data.total || 0);
       setCategories(data.categories || []);
     } catch {
+      if (signal?.cancelled) return;
       setError("テンプレートの読み込みに失敗しました。再度お試しください。");
       setTemplates([]);
     } finally {
-      setIsLoading(false);
+      if (!signal?.cancelled) {
+        setIsLoading(false);
+      }
     }
   }, [debouncedSearch, selectedCategory]);
 
   useEffect(() => {
-    fetchTemplates();
+    const signal = { cancelled: false };
+    fetchTemplates(signal);
+    return () => {
+      signal.cancelled = true;
+    };
   }, [fetchTemplates]);
 
   const handleCreate = useCallback(() => {
@@ -176,7 +185,7 @@ export default function TemplatesPage() {
         setTemplates((prev) => prev.filter((t) => t.id !== id));
         setTotal((prev) => Math.max(0, prev - 1));
       } catch {
-        alert("テンプレートの削除に失敗しました。もう一度お試しください。");
+        toast.error("テンプレートの削除に失敗しました。もう一度お試しください。");
       }
     },
     []
@@ -206,7 +215,7 @@ export default function TemplatesPage() {
         // Refresh list
         fetchTemplates();
       } catch {
-        alert("テンプレートの複製に失敗しました。もう一度お試しください。");
+        toast.error("テンプレートの複製に失敗しました。もう一度お試しください。");
       }
     },
     [templates, fetchTemplates]
@@ -354,6 +363,7 @@ export default function TemplatesPage() {
           size="lg"
           className="rounded-full h-14 w-14 shadow-lg"
           onClick={handleCreate}
+          aria-label="新しいテンプレートを作成"
         >
           <Plus className="h-6 w-6" />
         </Button>

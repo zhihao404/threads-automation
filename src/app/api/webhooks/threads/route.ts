@@ -85,7 +85,7 @@ async function verifySignature(
   // Constant-time comparison to prevent timing attacks
   let diff = 0;
   for (let i = 0; i < computedBytes.length; i++) {
-    diff |= computedBytes[i] ^ expectedBytes[i];
+    diff |= computedBytes[i]! ^ expectedBytes[i]!;
   }
   return diff === 0;
 }

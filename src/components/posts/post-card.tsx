@@ -120,8 +120,8 @@ function parseMediaUrls(mediaUrls: string | null): string[] {
 }
 
 export function PostCard({ post, onDelete, isDeleting }: PostCardProps) {
-  const statusInfo = statusConfig[post.status] || statusConfig.draft;
-  const mediaInfo = mediaTypeConfig[post.mediaType] || mediaTypeConfig.TEXT;
+  const statusInfo = statusConfig[post.status] ?? statusConfig["draft"]!;
+  const mediaInfo = mediaTypeConfig[post.mediaType] ?? mediaTypeConfig["TEXT"]!
   const MediaIcon = mediaInfo.icon;
 
   const truncatedContent =

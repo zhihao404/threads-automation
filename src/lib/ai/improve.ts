@@ -70,7 +70,8 @@ JSON形式のみで回答してください。`,
         explanation: s.explanation,
       }));
     }
-  } catch {
+  } catch (error) {
+    console.error("Failed to parse AI improvement response:", error);
     return [];
   }
 

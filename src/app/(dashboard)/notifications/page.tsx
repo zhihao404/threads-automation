@@ -23,7 +23,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   NotificationItem,
   type Notification,
-  type NotificationType,
 } from "@/components/notifications/notification-item";
 
 type FilterTab = "all" | "reply" | "mention" | "other";
@@ -47,15 +46,15 @@ function groupByDate(notifications: Notification[]): DateGroup[] {
   for (const notification of notifications) {
     const date = new Date(notification.createdAt);
     if (isToday(date)) {
-      groups["今日"].push(notification);
+      groups["今日"]!.push(notification);
     } else if (isYesterday(date)) {
-      groups["昨日"].push(notification);
+      groups["昨日"]!.push(notification);
     } else if (isThisWeek(date)) {
-      groups["今週"].push(notification);
+      groups["今週"]!.push(notification);
     } else if (isThisMonth(date)) {
-      groups["今月"].push(notification);
+      groups["今月"]!.push(notification);
     } else {
-      groups["それ以前"].push(notification);
+      groups["それ以前"]!.push(notification);
     }
   }
 

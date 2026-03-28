@@ -65,7 +65,7 @@ export default function AIInsightsPage() {
         const data = (await res.json()) as { accounts?: ThreadsAccount[] };
         setAccounts(data.accounts || []);
         if (data.accounts && data.accounts.length > 0) {
-          setSelectedAccountId(data.accounts[0].id);
+          setSelectedAccountId(data.accounts[0]!.id);
         }
       } catch {
         setError("アカウントの取得に失敗しました");

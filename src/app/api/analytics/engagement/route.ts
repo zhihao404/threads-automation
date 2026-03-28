@@ -6,7 +6,6 @@ import {
   postMetrics,
   accountMetrics,
   threadsAccounts,
-  session,
 } from "@/db/schema";
 import { eq, and, sql, desc, gte, lte } from "drizzle-orm";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
@@ -352,17 +351,23 @@ export async function GET(request: NextRequest) {
       const eng = m.likes + m.replies + m.reposts + m.quotes;
 
       // Hourly
-      hourlyBuckets[hour].postCount++;
-      hourlyBuckets[hour].totalViews += m.views;
-      hourlyBuckets[hour].totalLikes += m.likes;
-      hourlyBuckets[hour].totalReplies += m.replies;
-      hourlyBuckets[hour].totalEngagement += eng;
+      const hBucket = hourlyBuckets[hour];
+      if (hBucket) {
+        hBucket.postCount++;
+        hBucket.totalViews += m.views;
+        hBucket.totalLikes += m.likes;
+        hBucket.totalReplies += m.replies;
+        hBucket.totalEngagement += eng;
+      }
 
       // Daily
-      dayBuckets[dayOfWeek].postCount++;
-      dayBuckets[dayOfWeek].totalViews += m.views;
-      dayBuckets[dayOfWeek].totalLikes += m.likes;
-      dayBuckets[dayOfWeek].totalEngagement += eng;
+      const dBucket = dayBuckets[dayOfWeek];
+      if (dBucket) {
+        dBucket.postCount++;
+        dBucket.totalViews += m.views;
+        dBucket.totalLikes += m.likes;
+        dBucket.totalEngagement += eng;
+      }
 
       // Media type
       const mt = post.mediaType;
@@ -376,16 +381,19 @@ export async function GET(request: NextRequest) {
           totalEngagement: 0,
         };
       }
-      mediaBuckets[mt].postCount++;
-      mediaBuckets[mt].totalViews += m.views;
-      mediaBuckets[mt].totalLikes += m.likes;
-      mediaBuckets[mt].totalReplies += m.replies;
-      mediaBuckets[mt].totalReposts += m.reposts;
-      mediaBuckets[mt].totalEngagement += eng;
+      const mBucket = mediaBuckets[mt];
+      if (mBucket) {
+        mBucket.postCount++;
+        mBucket.totalViews += m.views;
+        mBucket.totalLikes += m.likes;
+        mBucket.totalReplies += m.replies;
+        mBucket.totalReposts += m.reposts;
+        mBucket.totalEngagement += eng;
+      }
     }
 
     const hourlyPerformance = Array.from({ length: 24 }, (_, hour) => {
-      const b = hourlyBuckets[hour];
+      const b = hourlyBuckets[hour]!;
       if (b.postCount === 0) {
         return {
           hour,
@@ -413,7 +421,7 @@ export async function GET(request: NextRequest) {
     });
 
     const dailyPerformance = Array.from({ length: 7 }, (_, day) => {
-      const b = dayBuckets[day];
+      const b = dayBuckets[day]!;
       if (b.postCount === 0) {
         return {
           day,

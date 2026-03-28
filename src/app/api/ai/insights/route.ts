@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { createDb } from "@/db";
 import {
-  session,
   threadsAccounts,
   posts,
   postMetrics,
@@ -19,15 +18,13 @@ import { incrementUsage } from "@/lib/plans/limits";
 import { AIConfigurationError, resolveAIProvider } from "@/lib/ai/provider";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+import { apiError } from "@/lib/api-response";
 
 export async function POST(request: NextRequest) {
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 }
-      );
+      return apiError("認証が必要です", 401);
     }
 
     const body = await request.json();
@@ -37,10 +34,7 @@ export async function POST(request: NextRequest) {
     };
 
     if (!accountId) {
-      return NextResponse.json(
-        { error: "アカウントIDが必要です" },
-        { status: 400 }
-      );
+      return apiError("アカウントIDが必要です", 400);
     }
 
     const { env } = await getCloudflareContext({ async: true });
@@ -49,14 +43,10 @@ export async function POST(request: NextRequest) {
     // Rate limiting: 5 requests per minute
     const rateLimit = await checkRateLimit(db, userId, "ai/insights", 5, 60_000);
     if (!rateLimit.allowed) {
-      return NextResponse.json(
-        { error: "リクエストが多すぎます。しばらく待ってからお試しください。" },
-        {
-          status: 429,
-          headers: {
-            "Retry-After": String(Math.ceil((rateLimit.resetAt - Date.now()) / 1000)),
-          },
-        },
+      return apiError(
+        "リクエストが多すぎます。しばらく待ってからお試しください。",
+        429,
+        { "Retry-After": String(Math.ceil((rateLimit.resetAt - Date.now()) / 1000)) },
       );
     }
 
@@ -77,10 +67,7 @@ export async function POST(request: NextRequest) {
       .limit(1);
 
     if (accountRows.length === 0) {
-      return NextResponse.json(
-        { error: "アカウントが見つかりません" },
-        { status: 404 }
-      );
+      return apiError("アカウントが見つかりません", 404);
     }
 
     const aiConfig = (() => {
@@ -95,7 +82,7 @@ export async function POST(request: NextRequest) {
     })();
 
     if (aiConfig instanceof AIConfigurationError) {
-      return NextResponse.json({ error: aiConfig.message }, { status: 503 });
+      return apiError(aiConfig.message, 503);
     }
 
     // Calculate period start date
@@ -253,21 +240,15 @@ export async function POST(request: NextRequest) {
     console.error("POST /api/ai/insights error:", error);
 
     if (error && typeof error === "object" && "status" in error) {
-      const apiError = error as { status: number };
-      if (apiError.status === 429) {
-        return NextResponse.json(
-          { error: "リクエストが多すぎます。しばらく待ってからお試しください。" },
-          { status: 429 }
-        );
+      const apiErr = error as { status: number };
+      if (apiErr.status === 429) {
+        return apiError("リクエストが多すぎます。しばらく待ってからお試しください。", 429);
       }
-      if (apiError.status === 401) {
-        return NextResponse.json(
-          { error: "AIサービスの認証に失敗しました。APIキーを確認してください。" },
-          { status: 500 }
-        );
+      if (apiErr.status === 401) {
+        return apiError("AIサービスの認証に失敗しました。APIキーを確認してください。", 500);
       }
     }
 
-    return NextResponse.json({ error: "処理中にエラーが発生しました" }, { status: 500 });
+    return apiError("処理中にエラーが発生しました", 500);
   }
 }

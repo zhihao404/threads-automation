@@ -1,19 +1,19 @@
 import { createAuth } from "@/lib/auth";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
-async function getD1(): Promise<D1Database> {
+async function getEnv() {
   const { env } = await getCloudflareContext({ async: true });
-  return env.DB;
+  return env;
 }
 
 export async function GET(request: Request) {
-  const d1 = await getD1();
-  const auth = createAuth(d1);
+  const env = await getEnv();
+  const auth = createAuth(env.DB, env.BETTER_AUTH_SECRET);
   return auth.handler(request);
 }
 
 export async function POST(request: Request) {
-  const d1 = await getD1();
-  const auth = createAuth(d1);
+  const env = await getEnv();
+  const auth = createAuth(env.DB, env.BETTER_AUTH_SECRET);
   return auth.handler(request);
 }

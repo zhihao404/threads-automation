@@ -13,7 +13,21 @@
       "idx": 1,
       "version": "6",
       "when": 1774517615215,
-      "tag": "0001_strong_psynapse",
+      "tag": "0001_add_notifications_and_webhook_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1774517700000,
+      "tag": "0002_add_rate_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1774517800000,
+      "tag": "0003_add_unique_constraints",
       "breakpoints": true
     }
   ]

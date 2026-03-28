@@ -81,7 +81,7 @@ function parseCronToConfig(cron: string): ScheduleConfig | null {
   const fields = cron.trim().split(/\s+/);
   if (fields.length !== 5) return null;
 
-  const [minuteF, hourF, domF, monthF, dowF] = fields;
+  const [minuteF, hourF, domF, monthF, dowF] = fields as [string, string, string, string, string];
 
   // Check if minute and hour are specific numbers
   const minute = parseInt(minuteF, 10);

@@ -6,7 +6,6 @@ import {
   postMetrics,
   threadsAccounts,
   accountMetrics,
-  session,
 } from "@/db/schema";
 import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
@@ -221,7 +220,7 @@ export async function GET(request: NextRequest) {
       .filter((p) => p.status === "published")
       .map((p) => p.id);
 
-    let postMetricsMap: Record<
+    const postMetricsMap: Record<
       string,
       { views: number; likes: number; replies: number }
     > = {};

@@ -120,19 +120,19 @@ export function WeekView({
       switch (e.key) {
         case "ArrowRight":
           if (dayIndex < 6) {
-            onSelectDate(weekDays[dayIndex + 1]);
+            onSelectDate(weekDays[dayIndex + 1]!);
           }
           e.preventDefault();
           break;
         case "ArrowLeft":
           if (dayIndex > 0) {
-            onSelectDate(weekDays[dayIndex - 1]);
+            onSelectDate(weekDays[dayIndex - 1]!);
           }
           e.preventDefault();
           break;
         case "Enter":
         case " ":
-          onSelectDate(weekDays[dayIndex]);
+          onSelectDate(weekDays[dayIndex]!);
           e.preventDefault();
           break;
       }
@@ -237,7 +237,7 @@ export function WeekView({
                   const colorIndex =
                     accountColorMap.get(post.accountId) ?? 0;
                   const MediaIcon =
-                    mediaTypeIcons[post.mediaType] || mediaTypeIcons.TEXT;
+                    mediaTypeIcons[post.mediaType] ?? mediaTypeIcons["TEXT"]!;
 
                   // Clamp position within visible range
                   if (top < 0 || top > totalHeight) return null;

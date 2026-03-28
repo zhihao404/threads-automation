@@ -7,7 +7,7 @@ import { getAuthenticatedUserId } from "@/lib/auth-helpers";
 
 function parsePeriodDays(period: string): number {
   const match = period.match(/^(\d+)d$/);
-  if (match) {
+  if (match?.[1]) {
     const days = parseInt(match[1], 10);
     return Math.min(365, Math.max(1, days));
   }
@@ -143,8 +143,8 @@ export async function GET(request: NextRequest) {
         )
       );
 
-    const cm = currentMetrics[0];
-    const pm = previousMetrics[0];
+    const cm = currentMetrics[0] ?? { totalLikes: 0, totalReplies: 0, totalReposts: 0, totalQuotes: 0, totalViews: 0, totalClicks: 0 };
+    const pm = previousMetrics[0] ?? { totalLikes: 0, totalReplies: 0, totalReposts: 0, totalQuotes: 0, totalViews: 0, totalClicks: 0 };
 
     const currentEngagement = cm.totalLikes + cm.totalReplies + cm.totalReposts + cm.totalQuotes;
     const currentEngagementRate = cm.totalViews > 0

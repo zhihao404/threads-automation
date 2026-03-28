@@ -38,8 +38,15 @@ export function KpiCard({
 
   useEffect(() => {
     if (value === 0) {
-      setDisplayValue(0);
-      return;
+      // Use requestAnimationFrame to avoid synchronous setState in effect
+      animationRef.current = requestAnimationFrame(() => {
+        setDisplayValue(0);
+      });
+      return () => {
+        if (animationRef.current !== null) {
+          cancelAnimationFrame(animationRef.current);
+        }
+      };
     }
 
     const duration = 600; // ms

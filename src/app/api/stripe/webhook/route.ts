@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
     const message = err instanceof Error ? err.message : "Unknown error";
     console.error("Webhook signature verification failed:", message);
     return NextResponse.json(
-      { error: `Webhook Error: ${message}` },
+      { error: "Webhook signature verification failed" },
       { status: 400 },
     );
   }

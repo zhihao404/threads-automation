@@ -53,7 +53,7 @@ export async function handleCollectMetrics(
   // 2. Create ThreadsClient
   const client = new ThreadsClient(accessToken, account.threadsUserId);
 
-  // 3. Get all published posts for this account
+  // 3. Get the latest 100 published posts for this account
   const publishedPosts = await db
     .select({
       id: posts.id,
@@ -65,7 +65,9 @@ export async function handleCollectMetrics(
         eq(posts.accountId, message.accountId),
         eq(posts.status, "published"),
       ),
-    );
+    )
+    .orderBy(desc(posts.publishedAt))
+    .limit(100);
 
   // 4. For each post with a threadsMediaId, get insights
   let metricsCollected = 0;
@@ -99,7 +101,7 @@ export async function handleCollectMetrics(
 
   // 5. Collect profile insights for the day
   try {
-    const today = now.toISOString().split("T")[0]; // YYYY-MM-DD
+    const today = now.toISOString().split("T")[0]!; // YYYY-MM-DD
 
     // Get insights for the past 24 hours
     const since = Math.floor(now.getTime() / 1000) - 86400; // 24 hours ago
@@ -114,7 +116,7 @@ export async function handleCollectMetrics(
     const insightValues: Record<string, number> = {};
     for (const metric of profileInsights.data) {
       if (metric.values.length > 0) {
-        insightValues[metric.name] = metric.values[0].value;
+        insightValues[metric.name] = metric.values[0]!.value;
       }
     }
 

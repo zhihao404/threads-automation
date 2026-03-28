@@ -4,6 +4,7 @@ import { createDb } from "@/db";
 import { threadsAccounts } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+import { apiError } from "@/lib/api-response";
 
 function getTokenStatus(
   expiresAt: Date
@@ -24,10 +25,7 @@ export async function GET() {
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 }
-      );
+      return apiError("認証が必要です", 401);
     }
 
     const { env } = await getCloudflareContext({ async: true });
@@ -57,9 +55,6 @@ export async function GET() {
     return NextResponse.json({ accounts: accountsWithStatus });
   } catch (error) {
     console.error("GET /api/accounts error:", error);
-    return NextResponse.json(
-      { error: "アカウント情報の取得に失敗しました" },
-      { status: 500 }
-    );
+    return apiError("アカウント情報の取得に失敗しました", 500);
   }
 }

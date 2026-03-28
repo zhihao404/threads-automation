@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const account = accountRows[0];
+    const account = accountRows[0]!;
 
     // Decrypt access token
     const accessToken = await decryptToken(account.accessToken);

@@ -25,7 +25,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
 import { extractVariables } from "@/lib/templates/render";
 
 export interface TemplateCardProps {
@@ -99,7 +98,7 @@ export function TemplateCard({
   onDuplicate,
   onUse,
 }: TemplateCardProps) {
-  const mediaInfo = mediaTypeConfig[template.mediaType] || mediaTypeConfig.TEXT;
+  const mediaInfo = mediaTypeConfig[template.mediaType] ?? mediaTypeConfig["TEXT"]!;
   const MediaIcon = mediaInfo.icon;
   const variables = extractVariables(template.content);
 

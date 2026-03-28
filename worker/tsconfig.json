@@ -19,6 +19,7 @@
     "../src/db/index.ts",
     "../src/lib/threads/client.ts",
     "../src/lib/threads/types.ts",
+    "../src/lib/crypto/core.ts",
     "../src/lib/cron/parser.ts",
     "../src/lib/templates/render.ts"
   ],

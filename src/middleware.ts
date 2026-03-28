@@ -37,8 +37,7 @@ export function middleware(request: NextRequest) {
   const isProtectedApi = pathname.startsWith("/api") &&
     !pathname.startsWith("/api/auth") &&
     !pathname.startsWith("/api/stripe/webhook") &&
-    !pathname.startsWith("/api/threads/webhook") &&
-    !pathname.startsWith("/api/cron");
+    !pathname.startsWith("/api/webhooks/threads");
 
   // Redirect unauthenticated users to login (browser pages)
   if (isProtectedRoute && !hasValidSession) {

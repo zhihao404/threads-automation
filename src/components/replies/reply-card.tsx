@@ -57,7 +57,8 @@ function truncateText(text: string, maxLength: number): string {
   return text.slice(0, maxLength) + "...";
 }
 
-export function ReplyCard({ reply, onToggleHide, accountId }: ReplyCardProps) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function ReplyCard({ reply, onToggleHide, accountId: _accountId }: ReplyCardProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [showParent, setShowParent] = useState(false);
   const [localHideStatus, setLocalHideStatus] = useState(reply.hideStatus);

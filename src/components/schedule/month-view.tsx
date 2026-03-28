@@ -101,7 +101,7 @@ export function MonthView({
           break;
         case "Enter":
         case " ":
-          onSelectDate(days[currentIndex].date);
+          onSelectDate(days[currentIndex]!.date);
           e.preventDefault();
           return;
         default:

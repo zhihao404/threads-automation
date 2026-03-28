@@ -7,7 +7,7 @@ export function extractVariables(content: string): string[] {
   const variables = new Set<string>();
   let match;
   while ((match = regex.exec(content)) !== null) {
-    variables.add(match[1]);
+    variables.add(match[1]!);
   }
   return Array.from(variables);
 }
@@ -39,7 +39,7 @@ export const BUILTIN_VARIABLES: Record<string, () => string> = {
   month: () => String(new Date().getMonth() + 1),
   day: () => String(new Date().getDate()),
   weekday: () =>
-    ["日", "月", "火", "水", "木", "金", "土"][new Date().getDay()],
+    ["日", "月", "火", "水", "木", "金", "土"][new Date().getDay()]!,
 };
 
 /**

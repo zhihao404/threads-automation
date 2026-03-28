@@ -94,7 +94,7 @@ export default function FollowersPage() {
         const accountList: Account[] = data.accounts || [];
         setAccounts(accountList);
         if (accountList.length > 0 && !selectedAccountId) {
-          setSelectedAccountId(accountList[0].id);
+          setSelectedAccountId(accountList[0]!.id);
         }
       } catch {
         // Silently fail
@@ -103,7 +103,8 @@ export default function FollowersPage() {
       }
     }
     fetchAccounts();
-  }, [selectedAccountId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Fetch follower data
   const fetchFollowerData = useCallback(async () => {

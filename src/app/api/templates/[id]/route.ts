@@ -5,6 +5,7 @@ import { postTemplates } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { updateTemplateSchema } from "@/lib/validations/template";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+import { apiError } from "@/lib/api-response";
 
 export async function GET(
   _request: NextRequest,
@@ -13,10 +14,7 @@ export async function GET(
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 }
-      );
+      return apiError("認証が必要です", 401);
     }
 
     const { id } = await params;
@@ -31,26 +29,17 @@ export async function GET(
 
     const template = rows[0];
     if (!template) {
-      return NextResponse.json(
-        { error: "テンプレートが見つかりません" },
-        { status: 404 }
-      );
+      return apiError("テンプレートが見つかりません", 404);
     }
 
     if (template.userId !== userId) {
-      return NextResponse.json(
-        { error: "アクセス権がありません" },
-        { status: 403 }
-      );
+      return apiError("アクセス権がありません", 403);
     }
 
     return NextResponse.json({ template });
   } catch (error) {
     console.error("GET /api/templates/[id] error:", error);
-    return NextResponse.json(
-      { error: "テンプレートの取得に失敗しました" },
-      { status: 500 }
-    );
+    return apiError("テンプレートの取得に失敗しました", 500);
   }
 }
 
@@ -61,10 +50,7 @@ export async function PUT(
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 }
-      );
+      return apiError("認証が必要です", 401);
     }
 
     const { id } = await params;
@@ -72,10 +58,7 @@ export async function PUT(
     const parseResult = updateTemplateSchema.safeParse(body);
 
     if (!parseResult.success) {
-      return NextResponse.json(
-        { error: "入力内容に誤りがあります", details: parseResult.error.flatten() },
-        { status: 400 }
-      );
+      return apiError("入力内容に誤りがあります", 400);
     }
 
     const input = parseResult.data;
@@ -91,17 +74,11 @@ export async function PUT(
 
     const template = rows[0];
     if (!template) {
-      return NextResponse.json(
-        { error: "テンプレートが見つかりません" },
-        { status: 404 }
-      );
+      return apiError("テンプレートが見つかりません", 404);
     }
 
     if (template.userId !== userId) {
-      return NextResponse.json(
-        { error: "アクセス権がありません" },
-        { status: 403 }
-      );
+      return apiError("アクセス権がありません", 403);
     }
 
     const updateData: Record<string, unknown> = {
@@ -127,10 +104,7 @@ export async function PUT(
     return NextResponse.json({ template: updated[0] });
   } catch (error) {
     console.error("PUT /api/templates/[id] error:", error);
-    return NextResponse.json(
-      { error: "テンプレートの更新に失敗しました" },
-      { status: 500 }
-    );
+    return apiError("テンプレートの更新に失敗しました", 500);
   }
 }
 
@@ -141,10 +115,7 @@ export async function DELETE(
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 }
-      );
+      return apiError("認証が必要です", 401);
     }
 
     const { id } = await params;
@@ -160,17 +131,11 @@ export async function DELETE(
 
     const template = rows[0];
     if (!template) {
-      return NextResponse.json(
-        { error: "テンプレートが見つかりません" },
-        { status: 404 }
-      );
+      return apiError("テンプレートが見つかりません", 404);
     }
 
     if (template.userId !== userId) {
-      return NextResponse.json(
-        { error: "アクセス権がありません" },
-        { status: 403 }
-      );
+      return apiError("アクセス権がありません", 403);
     }
 
     await db.delete(postTemplates).where(eq(postTemplates.id, id));
@@ -178,9 +143,6 @@ export async function DELETE(
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("DELETE /api/templates/[id] error:", error);
-    return NextResponse.json(
-      { error: "テンプレートの削除に失敗しました" },
-      { status: 500 }
-    );
+    return apiError("テンプレートの削除に失敗しました", 500);
   }
 }

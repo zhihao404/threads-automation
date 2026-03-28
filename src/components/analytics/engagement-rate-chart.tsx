@@ -25,12 +25,12 @@ const numberFormatter = new Intl.NumberFormat("ja-JP");
 
 function formatDateLabel(dateStr: string): string {
   const parts = dateStr.split("-");
-  return `${parseInt(parts[1])}/${parseInt(parts[2])}`;
+  return `${parseInt(parts[1]!)}/${parseInt(parts[2]!)}`;
 }
 
 function formatTooltipDate(dateStr: string): string {
   const parts = dateStr.split("-");
-  return `${parts[0]}年${parseInt(parts[1])}月${parseInt(parts[2])}日`;
+  return `${parts[0]}年${parseInt(parts[1]!)}月${parseInt(parts[2]!)}日`;
 }
 
 interface CustomTooltipProps {

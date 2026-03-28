@@ -161,7 +161,7 @@ export function TimeHeatmap({
               </div>
               <div className="flex-1 flex gap-0.5">
                 {Array.from({ length: 24 }, (_, hour) => {
-                  const value = heatmapData.grid[dayIdx][hour];
+                  const value = heatmapData.grid[dayIdx]![hour]!;
                   const opacity = getOpacity(value, heatmapData.maxVal);
                   const isTop = topCells.has(`${dayIdx}-${hour}`);
                   const isHovered =
@@ -187,7 +187,7 @@ export function TimeHeatmap({
                           dayIndex: dayIdx,
                           hour,
                           engagement: value,
-                          postCount: heatmapData.postCounts[dayIdx][hour],
+                          postCount: heatmapData.postCounts[dayIdx]![hour]!,
                         })
                       }
                       onMouseLeave={() => setHoveredCell(null)}
@@ -202,7 +202,7 @@ export function TimeHeatmap({
         {/* Tooltip */}
         {hoveredCell && (
           <div className="mt-2 text-sm text-muted-foreground text-center">
-            {DAY_LABELS[hoveredCell.dayIndex].label}曜日 {hoveredCell.hour}時 -
+            {DAY_LABELS[hoveredCell.dayIndex]!.label}曜日 {hoveredCell.hour}時 -
             エンゲージメント率: {hoveredCell.engagement.toFixed(2)}%
           </div>
         )}

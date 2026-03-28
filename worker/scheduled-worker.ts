@@ -15,6 +15,7 @@ import { handlePublishPost, getRetryDelay } from "./handlers/publish-post";
 import { handleProcessQueue } from "./handlers/process-queue";
 import { handleCollectMetrics } from "./handlers/collect-metrics";
 import { handleTokenRefresh } from "./handlers/refresh-token";
+import { handleGenerateReport } from "./handlers/generate-report";
 import { getNextRunTime } from "../src/lib/cron/parser";
 import { renderTemplate, getBuiltinVariableValues } from "../src/lib/templates/render";
 import { ulid } from "ulid";
@@ -301,6 +302,9 @@ async function processJob(message: JobMessage, env: Env, queueAttempts: number):
       break;
     case "refresh_token":
       await handleTokenRefresh(message, env);
+      break;
+    case "generate_report":
+      await handleGenerateReport(message, env);
       break;
     default:
       console.error(`Unknown job type: ${(message as JobMessage).type}`);

@@ -31,7 +31,7 @@ interface CustomTooltipProps {
 
 function CustomTooltip({ active, payload }: CustomTooltipProps) {
   if (!active || !payload || payload.length === 0) return null;
-  const entry = payload[0];
+  const entry = payload[0]!;
   return (
     <div className="rounded-lg border bg-background p-2 shadow-md">
       <div className="flex items-center gap-2 text-sm">

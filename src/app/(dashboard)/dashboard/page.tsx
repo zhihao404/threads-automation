@@ -1,399 +1,297 @@
-"use client";
-
-import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { createDb } from "@/db";
 import {
-  Eye,
-  Heart,
-  MessageCircle,
-  Users,
-  Plus,
-  Calendar,
-  BarChart3,
-  Sparkles,
-  AlertCircle,
-  LinkIcon,
-} from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
-import { KpiCard } from "@/components/dashboard/kpi-card";
-import { EngagementChart } from "@/components/dashboard/engagement-chart";
-import { PostStatusChart } from "@/components/dashboard/post-status-chart";
-import { RecentPostsList } from "@/components/dashboard/recent-posts-list";
+  posts,
+  postMetrics,
+  threadsAccounts,
+  accountMetrics,
+} from "@/db/schema";
+import { eq, desc, sql, and, gte, lte } from "drizzle-orm";
+import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+import { DashboardClient, type DashboardData } from "@/components/dashboard/dashboard-client";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface AccountInfo {
-  id: string;
-  username: string;
-  displayName: string | null;
-  profilePictureUrl: string | null;
+function formatDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
-interface KpiMetric {
-  current: number;
-  previous: number;
-  change: number;
+function calcChange(current: number, previous: number): number {
+  if (previous === 0) return current > 0 ? 100 : 0;
+  return Math.round(((current - previous) / previous) * 1000) / 10;
 }
 
-interface DashboardData {
-  accounts: AccountInfo[];
-  kpi: {
-    views: KpiMetric;
-    likes: KpiMetric;
-    replies: KpiMetric;
-    followers: { current: number; change: number };
+export default async function DashboardPage() {
+  const userId = await getAuthenticatedUserId();
+  if (!userId) redirect("/login");
+
+  const { env } = await getCloudflareContext({ async: true });
+  const db = createDb(env.DB);
+
+  // Default period: 7d
+  const days = 7;
+
+  // Get user's accounts
+  const userAccounts = await db
+    .select({
+      id: threadsAccounts.id,
+      username: threadsAccounts.username,
+      displayName: threadsAccounts.displayName,
+      profilePictureUrl: threadsAccounts.profilePictureUrl,
+    })
+    .from(threadsAccounts)
+    .where(eq(threadsAccounts.userId, userId));
+
+  if (userAccounts.length === 0) {
+    const emptyData: DashboardData = {
+      accounts: [],
+      kpi: {
+        views: { current: 0, previous: 0, change: 0 },
+        likes: { current: 0, previous: 0, change: 0 },
+        replies: { current: 0, previous: 0, change: 0 },
+        followers: { current: 0, change: 0 },
+      },
+      recentPosts: [],
+      dailyMetrics: [],
+      postsByStatus: { published: 0, scheduled: 0, draft: 0, failed: 0 },
+    };
+    return <DashboardClient initialData={emptyData} />;
+  }
+
+  const targetAccountIds = userAccounts.map((a) => a.id);
+
+  const accountInClause = sql`${accountMetrics.accountId} IN (${sql.join(
+    targetAccountIds.map((id) => sql`${id}`),
+    sql`, `
+  )})`;
+
+  const postAccountInClause = sql`${posts.accountId} IN (${sql.join(
+    targetAccountIds.map((id) => sql`${id}`),
+    sql`, `
+  )})`;
+
+  // Calculate date ranges
+  const now = new Date();
+  const currentStart = new Date(now);
+  currentStart.setDate(currentStart.getDate() - days);
+  const previousStart = new Date(currentStart);
+  previousStart.setDate(previousStart.getDate() - days);
+
+  const currentStartStr = formatDate(currentStart);
+  const previousStartStr = formatDate(previousStart);
+  const currentEndStr = formatDate(now);
+  const previousEndStr = formatDate(currentStart);
+
+  // 1. KPI: Current period metrics
+  const currentMetricsResult = await db
+    .select({
+      totalViews: sql<number>`COALESCE(SUM(${accountMetrics.views}), 0)`,
+      totalLikes: sql<number>`COALESCE(SUM(${accountMetrics.likes}), 0)`,
+      totalReplies: sql<number>`COALESCE(SUM(${accountMetrics.replies}), 0)`,
+    })
+    .from(accountMetrics)
+    .where(
+      and(
+        accountInClause,
+        gte(accountMetrics.date, currentStartStr),
+        lte(accountMetrics.date, currentEndStr)
+      )
+    );
+
+  // 2. KPI: Previous period metrics
+  const previousMetricsResult = await db
+    .select({
+      totalViews: sql<number>`COALESCE(SUM(${accountMetrics.views}), 0)`,
+      totalLikes: sql<number>`COALESCE(SUM(${accountMetrics.likes}), 0)`,
+      totalReplies: sql<number>`COALESCE(SUM(${accountMetrics.replies}), 0)`,
+    })
+    .from(accountMetrics)
+    .where(
+      and(
+        accountInClause,
+        gte(accountMetrics.date, previousStartStr),
+        lte(accountMetrics.date, previousEndStr)
+      )
+    );
+
+  // 3. KPI: Followers (latest record)
+  const latestFollowers = await db
+    .select({
+      followersCount: accountMetrics.followersCount,
+    })
+    .from(accountMetrics)
+    .where(accountInClause)
+    .orderBy(desc(accountMetrics.date))
+    .limit(1);
+
+  const previousFollowers = await db
+    .select({
+      followersCount: accountMetrics.followersCount,
+    })
+    .from(accountMetrics)
+    .where(
+      and(
+        accountInClause,
+        lte(accountMetrics.date, currentStartStr)
+      )
+    )
+    .orderBy(desc(accountMetrics.date))
+    .limit(1);
+
+  const currentViews = currentMetricsResult[0]?.totalViews ?? 0;
+  const previousViews = previousMetricsResult[0]?.totalViews ?? 0;
+  const currentLikes = currentMetricsResult[0]?.totalLikes ?? 0;
+  const previousLikes = previousMetricsResult[0]?.totalLikes ?? 0;
+  const currentReplies = currentMetricsResult[0]?.totalReplies ?? 0;
+  const previousReplies = previousMetricsResult[0]?.totalReplies ?? 0;
+  const currentFollowersCount = latestFollowers[0]?.followersCount ?? 0;
+  const previousFollowersCount = previousFollowers[0]?.followersCount ?? 0;
+
+  const kpi = {
+    views: {
+      current: currentViews,
+      previous: previousViews,
+      change: calcChange(currentViews, previousViews),
+    },
+    likes: {
+      current: currentLikes,
+      previous: previousLikes,
+      change: calcChange(currentLikes, previousLikes),
+    },
+    replies: {
+      current: currentReplies,
+      previous: previousReplies,
+      change: calcChange(currentReplies, previousReplies),
+    },
+    followers: {
+      current: currentFollowersCount,
+      change: currentFollowersCount - previousFollowersCount,
+    },
   };
-  recentPosts: Array<{
-    id: string;
-    content: string;
-    status: string;
-    mediaType: string;
-    publishedAt: string | null;
-    createdAt: string;
-    metrics: { views: number; likes: number; replies: number } | null;
-  }>;
-  dailyMetrics: Array<{
-    date: string;
-    views: number;
-    likes: number;
-    replies: number;
-    reposts: number;
-  }>;
-  postsByStatus: {
-    published: number;
-    scheduled: number;
-    draft: number;
-    failed: number;
-  };
-}
 
-type Period = "7d" | "14d" | "30d" | "90d";
+  // 4. Recent posts (last 10) with latest metrics
+  const recentPostRows = await db
+    .select({
+      id: posts.id,
+      content: posts.content,
+      status: posts.status,
+      mediaType: posts.mediaType,
+      publishedAt: posts.publishedAt,
+      createdAt: posts.createdAt,
+    })
+    .from(posts)
+    .where(postAccountInClause)
+    .orderBy(desc(posts.createdAt))
+    .limit(10);
 
-const PERIOD_OPTIONS: { value: Period; label: string }[] = [
-  { value: "7d", label: "7日間" },
-  { value: "14d", label: "14日間" },
-  { value: "30d", label: "30日間" },
-  { value: "90d", label: "90日間" },
-];
+  const publishedPostIds = recentPostRows
+    .filter((p) => p.status === "published")
+    .map((p) => p.id);
 
-// ---------------------------------------------------------------------------
-// Loading skeleton
-// ---------------------------------------------------------------------------
+  const postMetricsMap: Record<
+    string,
+    { views: number; likes: number; replies: number }
+  > = {};
 
-function DashboardSkeleton() {
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="mt-2 h-4 w-72" />
-        </div>
-        <div className="flex gap-2">
-          <Skeleton className="h-9 w-36" />
-          <Skeleton className="h-9 w-28" />
-        </div>
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Card key={i}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <Skeleton className="h-4 w-16" />
-              <Skeleton className="h-4 w-4" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-8 w-24" />
-              <Skeleton className="mt-2 h-3 w-32" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-      <Skeleton className="h-[380px] w-full rounded-xl" />
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Skeleton className="h-[360px] rounded-xl lg:col-span-2" />
-        <Skeleton className="h-[360px] rounded-xl" />
-      </div>
-    </div>
-  );
-}
+  if (publishedPostIds.length > 0) {
+    const metricsRows = await db
+      .select({
+        postId: postMetrics.postId,
+        views: postMetrics.views,
+        likes: postMetrics.likes,
+        replies: postMetrics.replies,
+        fetchedAt: postMetrics.fetchedAt,
+      })
+      .from(postMetrics)
+      .where(
+        sql`${postMetrics.postId} IN (${sql.join(
+          publishedPostIds.map((id) => sql`${id}`),
+          sql`, `
+        )})`
+      )
+      .orderBy(desc(postMetrics.fetchedAt));
 
-// ---------------------------------------------------------------------------
-// Empty state: no accounts connected
-// ---------------------------------------------------------------------------
-
-function NoAccountsState() {
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">ダッシュボード</h2>
-        <p className="text-muted-foreground">
-          Threadsアカウントを接続して始めましょう
-        </p>
-      </div>
-      <Card className="mx-auto max-w-md">
-        <CardContent className="flex flex-col items-center gap-4 pt-6 text-center">
-          <div className="rounded-full bg-muted p-4">
-            <LinkIcon className="h-8 w-8 text-muted-foreground" />
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold">
-              アカウントが接続されていません
-            </h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Threadsアカウントを接続して、投稿の管理やパフォーマンスの分析を始めましょう。
-            </p>
-          </div>
-          <Button asChild>
-            <Link href="/accounts">アカウントを接続する</Link>
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Error state
-// ---------------------------------------------------------------------------
-
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">ダッシュボード</h2>
-      </div>
-      <Card className="mx-auto max-w-md">
-        <CardContent className="flex flex-col items-center gap-4 pt-6 text-center">
-          <div className="rounded-full bg-destructive/10 p-4">
-            <AlertCircle className="h-8 w-8 text-destructive" />
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold">エラーが発生しました</h3>
-            <p className="mt-1 text-sm text-muted-foreground">{message}</p>
-          </div>
-          <Button onClick={onRetry}>再読み込み</Button>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Main dashboard page
-// ---------------------------------------------------------------------------
-
-export default function DashboardPage() {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [period, setPeriod] = useState<Period>("7d");
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
-
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams({ period });
-      if (selectedAccountId !== "all") {
-        params.set("accountId", selectedAccountId);
+    for (const m of metricsRows) {
+      if (!postMetricsMap[m.postId]) {
+        postMetricsMap[m.postId] = {
+          views: m.views,
+          likes: m.likes,
+          replies: m.replies,
+        };
       }
-      const res = await fetch(`/api/analytics/dashboard?${params.toString()}`);
-      if (!res.ok) {
-        const body = await res.json().catch(() => null) as { error?: string } | null;
-        throw new Error(
-          body?.error || `サーバーエラー (${res.status})`
-        );
-      }
-      const json: DashboardData = await res.json();
-      setData(json);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "データの取得に失敗しました"
-      );
-    } finally {
-      setLoading(false);
     }
-  }, [period, selectedAccountId]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  // Loading
-  if (loading && !data) {
-    return <DashboardSkeleton />;
   }
 
-  // Error (no data at all)
-  if (error && !data) {
-    return <ErrorState message={error} onRetry={fetchData} />;
+  const recentPosts = recentPostRows.map((p) => ({
+    id: p.id,
+    content: p.content,
+    status: p.status,
+    mediaType: p.mediaType,
+    publishedAt: p.publishedAt ? p.publishedAt.toISOString() : null,
+    createdAt: p.createdAt.toISOString(),
+    metrics: postMetricsMap[p.id] ?? null,
+  }));
+
+  // 5. Daily metrics for the period
+  const dailyMetricsRows = await db
+    .select({
+      date: accountMetrics.date,
+      views: sql<number>`COALESCE(SUM(${accountMetrics.views}), 0)`,
+      likes: sql<number>`COALESCE(SUM(${accountMetrics.likes}), 0)`,
+      replies: sql<number>`COALESCE(SUM(${accountMetrics.replies}), 0)`,
+      reposts: sql<number>`COALESCE(SUM(${accountMetrics.reposts}), 0)`,
+    })
+    .from(accountMetrics)
+    .where(
+      and(
+        accountInClause,
+        gte(accountMetrics.date, currentStartStr),
+        lte(accountMetrics.date, currentEndStr)
+      )
+    )
+    .groupBy(accountMetrics.date)
+    .orderBy(accountMetrics.date);
+
+  const dailyMetrics = dailyMetricsRows.map((row) => ({
+    date: row.date,
+    views: row.views,
+    likes: row.likes,
+    replies: row.replies,
+    reposts: row.reposts,
+  }));
+
+  // 6. Posts by status
+  const statusCounts = await db
+    .select({
+      status: posts.status,
+      count: sql<number>`COUNT(*)`,
+    })
+    .from(posts)
+    .where(postAccountInClause)
+    .groupBy(posts.status);
+
+  const postsByStatus = {
+    published: 0,
+    scheduled: 0,
+    draft: 0,
+    failed: 0,
+  };
+
+  for (const row of statusCounts) {
+    if (row.status in postsByStatus) {
+      postsByStatus[row.status as keyof typeof postsByStatus] = row.count;
+    }
   }
 
-  // No accounts
-  if (data && data.accounts.length === 0) {
-    return <NoAccountsState />;
-  }
+  const dashboardData: DashboardData = {
+    accounts: userAccounts,
+    kpi,
+    recentPosts,
+    dailyMetrics,
+    postsByStatus,
+  };
 
-  if (!data) return null;
-
-  const followersChange =
-    data.kpi.followers.current > 0 && data.kpi.followers.change !== 0
-      ? Math.round(
-          (data.kpi.followers.change /
-            (data.kpi.followers.current - data.kpi.followers.change)) *
-            1000
-        ) / 10
-      : 0;
-
-  return (
-    <div className="space-y-6">
-      {/* Header with selectors */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">ダッシュボード</h2>
-          <p className="text-muted-foreground">
-            Threadsのパフォーマンス概要
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {data.accounts.length > 1 && (
-            <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="アカウント選択" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">すべてのアカウント</SelectItem>
-                {data.accounts.map((acc) => (
-                  <SelectItem key={acc.id} value={acc.id}>
-                    @{acc.username}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          <Select value={period} onValueChange={(v) => setPeriod(v as Period)}>
-            <SelectTrigger className="w-[120px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PERIOD_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard
-          title="閲覧数"
-          value={data.kpi.views.current}
-          previousValue={data.kpi.views.previous}
-          change={data.kpi.views.change}
-          icon={Eye}
-          format="compact"
-        />
-        <KpiCard
-          title="いいね"
-          value={data.kpi.likes.current}
-          previousValue={data.kpi.likes.previous}
-          change={data.kpi.likes.change}
-          icon={Heart}
-        />
-        <KpiCard
-          title="リプライ"
-          value={data.kpi.replies.current}
-          previousValue={data.kpi.replies.previous}
-          change={data.kpi.replies.change}
-          icon={MessageCircle}
-        />
-        <KpiCard
-          title="フォロワー"
-          value={data.kpi.followers.current}
-          change={followersChange}
-          icon={Users}
-        />
-      </div>
-
-      {/* Engagement Chart */}
-      <EngagementChart data={data.dailyMetrics} period={period} />
-
-      {/* Recent Posts + Quick Actions / Status Chart */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        <RecentPostsList posts={data.recentPosts} />
-
-        <div className="space-y-6">
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader>
-              <CardTitle>クイックアクション</CardTitle>
-              <CardDescription>よく使う操作</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3">
-              <Button asChild className="w-full justify-start gap-2">
-                <Link href="/posts/new">
-                  <Plus className="h-4 w-4" />
-                  新規投稿
-                </Link>
-              </Button>
-              <Button
-                variant="outline"
-                asChild
-                className="w-full justify-start gap-2"
-              >
-                <Link href="/posts/schedule">
-                  <Calendar className="h-4 w-4" />
-                  投稿をスケジュール
-                </Link>
-              </Button>
-              <Button
-                variant="outline"
-                asChild
-                className="w-full justify-start gap-2"
-              >
-                <Link href="/dashboard/analytics">
-                  <BarChart3 className="h-4 w-4" />
-                  分析を見る
-                </Link>
-              </Button>
-              <Button
-                variant="outline"
-                asChild
-                className="w-full justify-start gap-2"
-              >
-                <Link href="/ai/generate">
-                  <Sparkles className="h-4 w-4" />
-                  AIで生成
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Post Status Distribution */}
-          <PostStatusChart data={data.postsByStatus} />
-        </div>
-      </div>
-    </div>
-  );
+  return <DashboardClient initialData={dashboardData} />;
 }

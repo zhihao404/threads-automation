@@ -171,7 +171,7 @@ export default function AIGeneratePage() {
         if (data.posts.length > 0) {
           setResults((prev) => {
             const updated = [...prev];
-            updated[index] = data.posts[0];
+            updated[index] = data.posts[0]!;
             return updated;
           });
         }

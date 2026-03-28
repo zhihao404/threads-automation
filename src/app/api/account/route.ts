@@ -17,7 +17,7 @@ import {
   subscriptions,
   usageRecords,
 } from "@/db/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { cookies } from "next/headers";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";

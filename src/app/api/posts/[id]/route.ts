@@ -4,6 +4,7 @@ import { createDb } from "@/db";
 import { posts, postMetrics, threadsAccounts } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+import { apiError } from "@/lib/api-response";
 
 export async function GET(
   _request: NextRequest,
@@ -12,10 +13,7 @@ export async function GET(
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 }
-      );
+      return apiError("認証が必要です", 401);
     }
 
     const { id } = await params;
@@ -53,17 +51,11 @@ export async function GET(
 
     const post = postRows[0];
     if (!post) {
-      return NextResponse.json(
-        { error: "投稿が見つかりません" },
-        { status: 404 }
-      );
+      return apiError("投稿が見つかりません", 404);
     }
 
     if (post.accountUserId !== userId) {
-      return NextResponse.json(
-        { error: "アクセス権がありません" },
-        { status: 403 }
-      );
+      return apiError("アクセス権がありません", 403);
     }
 
     // Get metrics if published
@@ -89,15 +81,13 @@ export async function GET(
       }
     }
 
-    const { accountUserId: _, ...postData } = post;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { accountUserId: _accountUserId, ...postData } = post;
 
     return NextResponse.json({ post: { ...postData, metrics } });
   } catch (error) {
     console.error("GET /api/posts/[id] error:", error);
-    return NextResponse.json(
-      { error: "投稿の取得に失敗しました" },
-      { status: 500 }
-    );
+    return apiError("投稿の取得に失敗しました", 500);
   }
 }
 
@@ -108,10 +98,7 @@ export async function DELETE(
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 }
-      );
+      return apiError("認証が必要です", 401);
     }
 
     const { id } = await params;
@@ -136,17 +123,11 @@ export async function DELETE(
 
     const post = postRows[0];
     if (!post) {
-      return NextResponse.json(
-        { error: "投稿が見つかりません" },
-        { status: 404 }
-      );
+      return apiError("投稿が見つかりません", 404);
     }
 
     if (post.accountUserId !== userId) {
-      return NextResponse.json(
-        { error: "アクセス権がありません" },
-        { status: 403 }
-      );
+      return apiError("アクセス権がありません", 403);
     }
 
     // If published, try to delete from Threads
@@ -173,9 +154,6 @@ export async function DELETE(
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("DELETE /api/posts/[id] error:", error);
-    return NextResponse.json(
-      { error: "投稿の削除に失敗しました" },
-      { status: 500 }
-    );
+    return apiError("投稿の削除に失敗しました", 500);
   }
 }

@@ -4,6 +4,7 @@ import { createDb } from "@/db";
 import { notifications, threadsAccounts } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+import { apiError } from "@/lib/api-response";
 
 /**
  * Verify a notification belongs to the authenticated user and return it.
@@ -52,19 +53,13 @@ export async function PATCH(
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 },
-      );
+      return apiError("認証が必要です", 401);
     }
 
     const { id } = await params;
     const notification = await getOwnedNotification(id, userId);
     if (!notification) {
-      return NextResponse.json(
-        { error: "通知が見つかりません" },
-        { status: 404 },
-      );
+      return apiError("通知が見つかりません", 404);
     }
 
     const { env } = await getCloudflareContext({ async: true });
@@ -78,10 +73,7 @@ export async function PATCH(
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("PATCH /api/notifications/[id] error:", error);
-    return NextResponse.json(
-      { error: "通知の更新に失敗しました" },
-      { status: 500 },
-    );
+    return apiError("通知の更新に失敗しました", 500);
   }
 }
 
@@ -96,19 +88,13 @@ export async function DELETE(
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 },
-      );
+      return apiError("認証が必要です", 401);
     }
 
     const { id } = await params;
     const notification = await getOwnedNotification(id, userId);
     if (!notification) {
-      return NextResponse.json(
-        { error: "通知が見つかりません" },
-        { status: 404 },
-      );
+      return apiError("通知が見つかりません", 404);
     }
 
     const { env } = await getCloudflareContext({ async: true });
@@ -119,9 +105,6 @@ export async function DELETE(
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("DELETE /api/notifications/[id] error:", error);
-    return NextResponse.json(
-      { error: "通知の削除に失敗しました" },
-      { status: 500 },
-    );
+    return apiError("通知の削除に失敗しました", 500);
   }
 }

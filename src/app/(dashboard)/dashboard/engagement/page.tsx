@@ -6,9 +6,6 @@ import {
   Heart,
   MessageCircle,
   Zap,
-  TrendingUp,
-  TrendingDown,
-  Minus,
 } from "lucide-react";
 import {
   Card,
@@ -17,6 +14,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EngagementRateChart } from "@/components/analytics/engagement-rate-chart";
@@ -137,7 +141,7 @@ export default function EngagementPage() {
           );
           setAccounts(accs);
           if (accs.length > 0 && !selectedAccount) {
-            setSelectedAccount(accs[0].id);
+            setSelectedAccount(accs[0]!.id);
           }
         }
       } catch {
@@ -145,7 +149,8 @@ export default function EngagementPage() {
       }
     }
     fetchAccounts();
-  }, [selectedAccount]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const fetchData = useCallback(async () => {
     if (!selectedAccount) return;
@@ -232,17 +237,21 @@ export default function EngagementPage() {
         <div className="flex flex-wrap items-center gap-2">
           {/* Account selector */}
           {accounts.length > 1 && (
-            <select
+            <Select
               value={selectedAccount}
-              onChange={(e) => setSelectedAccount(e.target.value)}
-              className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+              onValueChange={setSelectedAccount}
             >
-              {accounts.map((acc) => (
-                <option key={acc.id} value={acc.id}>
-                  @{acc.username}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="アカウント選択" />
+              </SelectTrigger>
+              <SelectContent>
+                {accounts.map((acc) => (
+                  <SelectItem key={acc.id} value={acc.id}>
+                    @{acc.username}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
           {/* Period selector */}
           <div className="flex rounded-md border border-input">

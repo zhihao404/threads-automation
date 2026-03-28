@@ -10,6 +10,7 @@ import { createWorkerDb } from "../db";
 import { posts, threadsAccounts } from "../../src/db/schema";
 import { decryptTokenWithKey } from "../crypto";
 import { ThreadsClient } from "../threads-client";
+import { getMediaType } from "../utils";
 
 /** Maximum number of publish attempts before marking a post as failed */
 const MAX_RETRIES = 3;
@@ -22,7 +23,7 @@ const RETRY_DELAYS = [30, 120, 300];
  * Falls back to the last delay value for attempts beyond the schedule.
  */
 export function getRetryDelay(attempt: number): number {
-  return RETRY_DELAYS[Math.min(attempt, RETRY_DELAYS.length - 1)];
+  return RETRY_DELAYS[Math.min(attempt, RETRY_DELAYS.length - 1)]!;
 }
 
 /**
@@ -154,7 +155,7 @@ export async function handlePublishPost(
         containerId = await client.createCarouselPost({
           text: post.content,
           children: mediaUrls.map((url) => ({
-            mediaType: "IMAGE" as const,
+            mediaType: getMediaType(url),
             url,
           })),
           replyControl: post.replyControl as "everyone" | "accounts_you_follow" | "mentioned_only",

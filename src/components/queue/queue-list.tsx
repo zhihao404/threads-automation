@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -267,7 +267,7 @@ export function QueueList({ accountId }: QueueListProps) {
 
     // Reorder locally
     const newItems = [...items];
-    const [movedItem] = newItems.splice(sourceIndex, 1);
+    const [movedItem] = newItems.splice(sourceIndex, 1) as [QueueItemData];
     newItems.splice(targetIndex, 0, movedItem);
 
     // Update positions
@@ -433,7 +433,7 @@ export function QueueList({ accountId }: QueueListProps) {
               key={item.id}
               item={item}
               isFirst={index === 0}
-              estimatedPublishTime={estimatedTimes[index]}
+              estimatedPublishTime={estimatedTimes[index] ?? null}
               onRemove={handleRemove}
               isRemoving={removingId === item.id}
               onDragStart={handleDragStart}

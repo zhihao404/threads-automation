@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, ListOrdered, Loader2, AlertCircle } from "lucide-react";
+import { Plus, ListOrdered, AlertCircle } from "lucide-react";
 import { QueueList } from "@/components/queue/queue-list";
 
 interface ThreadsAccount {
@@ -70,7 +70,7 @@ export default function QueuePage() {
       };
       setAccounts(data.accounts || []);
       if (data.accounts && data.accounts.length > 0) {
-        setSelectedAccountId(data.accounts[0].id);
+        setSelectedAccountId(data.accounts[0]!.id);
       }
     } catch {
       setError("アカウント情報の読み込みに失敗しました。");

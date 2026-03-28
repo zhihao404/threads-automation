@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+import { useSession, signOut } from "@/lib/auth-client";
 import {
   LayoutDashboard,
   PenSquare,
@@ -102,7 +103,14 @@ const navSections: NavSection[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { data: session } = useSession();
   const [collapsed, setCollapsed] = useState(false);
+
+  const userName = session?.user?.name || "User";
+  const userEmail = session?.user?.email || "";
+  const userImage = session?.user?.image || "";
+  const userInitial = userName.charAt(0).toUpperCase();
 
   return (
     <aside
@@ -212,17 +220,17 @@ export function Sidebar() {
               )}
             >
               <Avatar className="h-8 w-8">
-                <AvatarImage src="" alt="User" />
-                <AvatarFallback className="text-xs">U</AvatarFallback>
+                <AvatarImage src={userImage} alt={userName} />
+                <AvatarFallback className="text-xs">{userInitial}</AvatarFallback>
               </Avatar>
               {!collapsed && (
                 <>
                   <div className="flex flex-1 flex-col items-start text-left">
                     <span className="text-sm font-medium text-sidebar-foreground">
-                      User
+                      {userName}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      user@example.com
+                      {userEmail}
                     </span>
                   </div>
                   <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -240,8 +248,9 @@ export function Sidebar() {
             <DropdownMenuSeparator />
             <DropdownMenuItem
               className="text-destructive focus:text-destructive"
-              onClick={() => {
-                // signOut() will be called here when auth is wired up
+              onClick={async () => {
+                await signOut();
+                router.push("/login");
               }}
             >
               <LogOut className="mr-2 h-4 w-4" />

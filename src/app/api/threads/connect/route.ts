@@ -13,22 +13,14 @@ import { guardPlanLimit } from "@/lib/plans/guard";
 export const runtime = "edge";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const { env } = getCloudflareContext();
+  const { env } = await getCloudflareContext({ async: true });
 
   const clientId = env.THREADS_APP_ID;
-  const appUrl = env.NEXT_PUBLIC_APP_URL;
+  const appUrl = env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
 
   if (!clientId) {
-    return NextResponse.json(
-      { error: "THREADS_APP_ID is not configured" },
-      { status: 500 },
-    );
-  }
-
-  if (!appUrl) {
-    return NextResponse.json(
-      { error: "NEXT_PUBLIC_APP_URL is not configured" },
-      { status: 500 },
+    return NextResponse.redirect(
+      `${appUrl}/accounts?error=${encodeURIComponent("Threads APIの設定が完了していません。管理者にお問い合わせください。")}`,
     );
   }
 
@@ -50,7 +42,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const userId = sessions[0]?.userId;
     if (userId) {
       const limitResponse = await guardPlanLimit(db, userId, "account");
-      if (limitResponse) return limitResponse;
+      if (limitResponse) {
+        return NextResponse.redirect(
+          `${appUrl}/accounts?error=${encodeURIComponent("プランの上限に達しました。アップグレードしてください。")}`,
+        );
+      }
     }
   }
 

@@ -10,6 +10,7 @@ import { createWorkerDb } from "../db";
 import { posts, postQueue, threadsAccounts } from "../../src/db/schema";
 import { decryptTokenWithKey } from "../crypto";
 import { ThreadsClient } from "../threads-client";
+import { getMediaType } from "../utils";
 
 /**
  * Processes the next post in the queue for a given account.
@@ -148,7 +149,7 @@ export async function handleProcessQueue(
         containerId = await client.createCarouselPost({
           text: post.content,
           children: mediaUrls.map((url) => ({
-            mediaType: "IMAGE" as const,
+            mediaType: getMediaType(url),
             url,
           })),
           replyControl: post.replyControl as "everyone" | "accounts_you_follow" | "mentioned_only",
@@ -170,34 +171,32 @@ export async function handleProcessQueue(
       // Permalink fetch is non-critical
     }
 
-    // Update post status to published
-    await db
-      .update(posts)
-      .set({
-        status: "published",
-        threadsMediaId: publishResult.id,
-        permalink,
-        publishedAt: now,
-        errorMessage: null,
-        updatedAt: now,
-      })
-      .where(eq(posts.id, queueItem.postId));
-
-    // 4. Remove from queue on success
-    await db.delete(postQueue).where(eq(postQueue.id, queueItem.id));
-
-    // 5. Update remaining queue positions (decrement all positions above the removed one)
-    await db
-      .update(postQueue)
-      .set({
-        position: sql`${postQueue.position} - 1`,
-      })
-      .where(
-        and(
-          eq(postQueue.accountId, message.accountId),
-          sql`${postQueue.position} > ${queueItem.position}`,
+    // Batch: update post status, remove from queue, update remaining positions
+    await db.batch([
+      db
+        .update(posts)
+        .set({
+          status: "published",
+          threadsMediaId: publishResult.id,
+          permalink,
+          publishedAt: now,
+          errorMessage: null,
+          updatedAt: now,
+        })
+        .where(eq(posts.id, queueItem.postId)),
+      db.delete(postQueue).where(eq(postQueue.id, queueItem.id)),
+      db
+        .update(postQueue)
+        .set({
+          position: sql`${postQueue.position} - 1`,
+        })
+        .where(
+          and(
+            eq(postQueue.accountId, message.accountId),
+            sql`${postQueue.position} > ${queueItem.position}`,
+          ),
         ),
-      );
+    ]);
 
     console.log(
       `Queue item ${queueItem.id} processed: post ${queueItem.postId} published as ${publishResult.id}`,
@@ -206,31 +205,30 @@ export async function handleProcessQueue(
     const errorMessage =
       error instanceof Error ? error.message : "Unknown publishing error";
 
-    await db
-      .update(posts)
-      .set({
-        status: "failed",
-        errorMessage,
-        retryCount: (post.retryCount ?? 0) + 1,
-        updatedAt: now,
-      })
-      .where(eq(posts.id, queueItem.postId));
-
-    // Remove failed item from queue so the next one can proceed
-    await db.delete(postQueue).where(eq(postQueue.id, queueItem.id));
-
-    // Decrement positions for remaining items
-    await db
-      .update(postQueue)
-      .set({
-        position: sql`${postQueue.position} - 1`,
-      })
-      .where(
-        and(
-          eq(postQueue.accountId, message.accountId),
-          sql`${postQueue.position} > ${queueItem.position}`,
+    // Batch: mark post as failed, remove from queue, decrement remaining positions
+    await db.batch([
+      db
+        .update(posts)
+        .set({
+          status: "failed",
+          errorMessage,
+          retryCount: (post.retryCount ?? 0) + 1,
+          updatedAt: now,
+        })
+        .where(eq(posts.id, queueItem.postId)),
+      db.delete(postQueue).where(eq(postQueue.id, queueItem.id)),
+      db
+        .update(postQueue)
+        .set({
+          position: sql`${postQueue.position} - 1`,
+        })
+        .where(
+          and(
+            eq(postQueue.accountId, message.accountId),
+            sql`${postQueue.position} > ${queueItem.position}`,
+          ),
         ),
-      );
+    ]);
 
     console.error(
       `Failed to process queue item ${queueItem.id} for post ${queueItem.postId}: ${errorMessage}`,

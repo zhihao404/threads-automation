@@ -58,7 +58,7 @@ export function TrendChart({
             // Format YYYY-MM-DD to M/D
             if (typeof value === "string" && value.match(/^\d{4}-\d{2}-\d{2}$/)) {
               const parts = value.split("-");
-              return `${parseInt(parts[1])}/${parseInt(parts[2])}`;
+              return `${parseInt(parts[1]!)}/${parseInt(parts[2]!)}`;
             }
             return value;
           }}
@@ -81,7 +81,7 @@ export function TrendChart({
             const labelStr = String(label);
             if (labelStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
               const parts = labelStr.split("-");
-              return `${parts[0]}年${parseInt(parts[1])}月${parseInt(parts[2])}日`;
+              return `${parts[0]}年${parseInt(parts[1]!)}月${parseInt(parts[2]!)}日`;
             }
             return labelStr;
           }}

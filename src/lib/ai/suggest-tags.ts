@@ -50,7 +50,8 @@ JSON形式のみで回答してください。`,
         .filter((tag: string) => tag.length > 0 && tag.length <= 50)
         .slice(0, tagCount);
     }
-  } catch {
+  } catch (error) {
+    console.error("Failed to parse AI tag suggestion response:", error);
     return [];
   }
 

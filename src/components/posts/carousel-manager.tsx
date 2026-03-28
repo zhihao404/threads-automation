@@ -81,7 +81,7 @@ export function CarouselManager({
       }
 
       const newItems = [...items];
-      const [movedItem] = newItems.splice(dragIndex, 1);
+      const [movedItem] = newItems.splice(dragIndex, 1) as [UploadResult];
       newItems.splice(dropIndex, 0, movedItem);
       onReorder(newItems);
       setDragIndex(null);
@@ -175,6 +175,7 @@ export function CarouselManager({
                     </div>
                   </div>
                 ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={item.url}
                     alt={`カルーセル ${index + 1}`}

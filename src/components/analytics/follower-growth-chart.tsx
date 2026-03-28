@@ -34,7 +34,7 @@ function CustomTooltip({
 }) {
   if (!active || !payload || payload.length === 0) return null;
 
-  const data = payload[0].payload;
+  const data = payload[0]!.payload;
   const dateStr = label
     ? format(parseISO(label), "M月d日(E)", { locale: ja })
     : "";
@@ -105,7 +105,7 @@ export function FollowerGrowthChart({ data }: FollowerGrowthChartProps) {
     );
   }
 
-  const startValue = data[0].followers;
+  const startValue = data[0]!.followers;
 
   return (
     <ResponsiveContainer width="100%" height={320}>

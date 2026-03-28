@@ -70,7 +70,7 @@ export function QueueItem({
   isDragOver,
   isDragging,
 }: QueueItemProps) {
-  const mediaInfo = mediaTypeConfig[item.postMediaType] || mediaTypeConfig.TEXT;
+  const mediaInfo = mediaTypeConfig[item.postMediaType] ?? mediaTypeConfig["TEXT"]!;
   const MediaIcon = mediaInfo.icon;
 
   const truncatedContent =

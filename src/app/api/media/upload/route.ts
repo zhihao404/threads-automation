@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { createDb } from "@/db";
-
-import { and } from "drizzle-orm";
 import {
   validateFile,
   generateObjectKey,
@@ -15,6 +13,7 @@ import {
 import type { UploadResult } from "@/lib/media/upload";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+import { apiError } from "@/lib/api-response";
 
 // =============================================================================
 // POST /api/media/upload
@@ -26,10 +25,7 @@ export async function POST(request: NextRequest) {
     // 1. Authenticate user
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 }
-      );
+      return apiError("認証が必要です", 401);
     }
 
     // 2. Rate limiting: 20 requests per minute
@@ -37,14 +33,10 @@ export async function POST(request: NextRequest) {
     const rateLimitDb = createDb(rateLimitEnv.DB);
     const rateLimit = await checkRateLimit(rateLimitDb, userId, "media/upload", 20, 60_000);
     if (!rateLimit.allowed) {
-      return NextResponse.json(
-        { error: "リクエストが多すぎます。しばらく待ってからお試しください。" },
-        {
-          status: 429,
-          headers: {
-            "Retry-After": String(Math.ceil((rateLimit.resetAt - Date.now()) / 1000)),
-          },
-        },
+      return apiError(
+        "リクエストが多すぎます。しばらく待ってからお試しください。",
+        429,
+        { "Retry-After": String(Math.ceil((rateLimit.resetAt - Date.now()) / 1000)) },
       );
     }
 
@@ -53,27 +45,18 @@ export async function POST(request: NextRequest) {
     try {
       formData = await request.formData();
     } catch {
-      return NextResponse.json(
-        { error: "リクエストの形式が正しくありません。multipart/form-data で送信してください。" },
-        { status: 400 }
-      );
+      return apiError("リクエストの形式が正しくありません。multipart/form-data で送信してください。", 400);
     }
 
     const file = formData.get("file");
     const mediaType = formData.get("type") as string | null;
 
     if (!file || !(file instanceof File)) {
-      return NextResponse.json(
-        { error: "ファイルが指定されていません" },
-        { status: 400 }
-      );
+      return apiError("ファイルが指定されていません", 400);
     }
 
     if (!mediaType || (mediaType !== "image" && mediaType !== "video")) {
-      return NextResponse.json(
-        { error: "メディアタイプを指定してください (image または video)" },
-        { status: 400 }
-      );
+      return apiError("メディアタイプを指定してください (image または video)", 400);
     }
 
     // 3. Server-side validation of file type and size
@@ -84,34 +67,26 @@ export async function POST(request: NextRequest) {
         : (ALLOWED_VIDEO_TYPES as readonly string[]);
 
     if (!allowedTypes.includes(file.type)) {
-      return NextResponse.json(
-        {
-          error:
-            mediaType === "image"
-              ? "サポートされていない画像形式です。JPEG または PNG のみ対応しています。"
-              : "サポートされていない動画形式です。MP4 または QuickTime のみ対応しています。",
-        },
-        { status: 400 }
+      return apiError(
+        mediaType === "image"
+          ? "サポートされていない画像形式です。JPEG または PNG のみ対応しています。"
+          : "サポートされていない動画形式です。MP4 または QuickTime のみ対応しています。",
+        400,
       );
     }
 
     const maxSize = mediaType === "image" ? MAX_IMAGE_SIZE : MAX_VIDEO_SIZE;
     if (file.size > maxSize) {
-      return NextResponse.json(
-        {
-          error: `ファイルサイズが大きすぎます。最大 ${mediaType === "image" ? "8MB" : "1GB"} まで対応しています。`,
-        },
-        { status: 400 }
+      return apiError(
+        `ファイルサイズが大きすぎます。最大 ${mediaType === "image" ? "8MB" : "1GB"} まで対応しています。`,
+        400,
       );
     }
 
     // Also run the shared validation function for consistency
     const validation = validateFile(file, mediaType);
     if (!validation.valid) {
-      return NextResponse.json(
-        { error: validation.error },
-        { status: 400 }
-      );
+      return apiError(validation.error!, 400);
     }
 
     // 4. Generate unique R2 object key
@@ -147,9 +122,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     console.error("POST /api/media/upload error:", error);
-    return NextResponse.json(
-      { error: "ファイルのアップロードに失敗しました" },
-      { status: 500 }
-    );
+    return apiError("ファイルのアップロードに失敗しました", 500);
   }
 }

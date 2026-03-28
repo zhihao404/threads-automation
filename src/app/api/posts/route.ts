@@ -8,15 +8,13 @@ import { createPostSchema } from "@/lib/validations/post";
 import { guardPlanLimit } from "@/lib/plans/guard";
 import { incrementUsage } from "@/lib/plans/limits";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+import { apiError } from "@/lib/api-response";
 
 export async function GET(request: NextRequest) {
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 }
-      );
+      return apiError("認証が必要です", 401);
     }
 
     const { env } = await getCloudflareContext({ async: true });
@@ -100,7 +98,7 @@ export async function GET(request: NextRequest) {
       .filter((p) => p.status === "published" && p.threadsMediaId)
       .map((p) => p.id);
 
-    let metricsMap: Record<
+    const metricsMap: Record<
       string,
       { views: number; likes: number; replies: number; reposts: number; quotes: number; shares: number }
     > = {};
@@ -140,10 +138,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ posts: postsWithMetrics, total });
   } catch (error) {
     console.error("GET /api/posts error:", error);
-    return NextResponse.json(
-      { error: "投稿の取得に失敗しました" },
-      { status: 500 }
-    );
+    return apiError("投稿の取得に失敗しました", 500);
   }
 }
 
@@ -151,20 +146,14 @@ export async function POST(request: NextRequest) {
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 }
-      );
+      return apiError("認証が必要です", 401);
     }
 
     const body = await request.json();
     const parseResult = createPostSchema.safeParse(body);
 
     if (!parseResult.success) {
-      return NextResponse.json(
-        { error: "入力内容に誤りがあります", details: parseResult.error.flatten() },
-        { status: 400 }
-      );
+      return apiError("入力内容に誤りがあります", 400);
     }
 
     const input = parseResult.data;
@@ -195,10 +184,7 @@ export async function POST(request: NextRequest) {
 
     const account = accountRows[0];
     if (!account) {
-      return NextResponse.json(
-        { error: "アカウントが見つかりません" },
-        { status: 404 }
-      );
+      return apiError("アカウントが見つかりません", 404);
     }
 
     const now = new Date();
@@ -246,10 +232,7 @@ export async function POST(request: NextRequest) {
             topicTag: input.topicTag,
           });
         } else {
-          return NextResponse.json(
-            { error: "メディアタイプに対応するURLが必要です" },
-            { status: 400 }
-          );
+          return apiError("メディアタイプに対応するURLが必要です", 400);
         }
 
         // Get the post permalink
@@ -304,17 +287,11 @@ export async function POST(request: NextRequest) {
           updatedAt: now,
         });
 
-        return NextResponse.json(
-          { id: postId, status: "failed", error: errorMessage },
-          { status: 502 }
-        );
+        return apiError(errorMessage, 502);
       }
     } else if (input.status === "scheduled") {
       if (!input.scheduledAt) {
-        return NextResponse.json(
-          { error: "予約投稿には日時の指定が必要です" },
-          { status: 400 }
-        );
+        return apiError("予約投稿には日時の指定が必要です", 400);
       }
 
       await db.insert(posts).values({
@@ -352,8 +329,6 @@ export async function POST(request: NextRequest) {
         updatedAt: now,
       });
 
-      await incrementUsage(db, userId, "post");
-
       return NextResponse.json(
         { id: postId, status: "draft" },
         { status: 201 }
@@ -361,9 +336,6 @@ export async function POST(request: NextRequest) {
     }
   } catch (error) {
     console.error("POST /api/posts error:", error);
-    return NextResponse.json(
-      { error: "投稿の作成に失敗しました" },
-      { status: 500 }
-    );
+    return apiError("投稿の作成に失敗しました", 500);
   }
 }

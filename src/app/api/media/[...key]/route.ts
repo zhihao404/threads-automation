@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-
-import { and } from "drizzle-orm";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
 
 // =============================================================================
@@ -35,6 +33,12 @@ export async function GET(
     // Expected format: uploads/{userId}/{ulid}-{filename}
     if (!objectKey.startsWith("uploads/")) {
       return new NextResponse("Not Found", { status: 404 });
+    }
+
+    // Verify ownership - the key must belong to the authenticated user
+    const expectedPrefix = `uploads/${userId}/`;
+    if (!objectKey.startsWith(expectedPrefix)) {
+      return new NextResponse("Forbidden", { status: 403 });
     }
 
     // Prevent path traversal attacks

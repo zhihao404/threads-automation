@@ -13,7 +13,7 @@ import { ulid } from "ulid";
 export const runtime = "edge";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const { env } = getCloudflareContext();
+  const { env } = await getCloudflareContext({ async: true });
   const { searchParams } = request.nextUrl;
 
   const appUrl = env.NEXT_PUBLIC_APP_URL;
@@ -72,7 +72,39 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   try {
     // -------------------------------------------------------------------------
-    // 3. Exchange code for short-lived token
+    // 3. Validate session (authenticate user BEFORE exchanging tokens)
+    // -------------------------------------------------------------------------
+    const db = env.DB;
+    if (!db) {
+      throw new Error("D1 database binding (DB) is not configured");
+    }
+
+    const cookieStore = await cookies();
+    const sessionToken = cookieStore.get("better-auth.session_token")?.value;
+
+    if (!sessionToken) {
+      return NextResponse.redirect(
+        `${appUrl}/accounts?error=${encodeURIComponent("You must be logged in to connect a Threads account.")}`,
+      );
+    }
+
+    const sessionRow = await db
+      .prepare(
+        "SELECT user_id FROM session WHERE token = ? AND expires_at > ?",
+      )
+      .bind(sessionToken, Math.floor(Date.now() / 1000))
+      .first<{ user_id: string }>();
+
+    if (!sessionRow) {
+      return NextResponse.redirect(
+        `${appUrl}/accounts?error=${encodeURIComponent("Your session has expired. Please log in again.")}`,
+      );
+    }
+
+    const appUserId = sessionRow.user_id;
+
+    // -------------------------------------------------------------------------
+    // 4. Exchange code for short-lived token
     // -------------------------------------------------------------------------
     const { accessToken: shortLivedToken, userId: threadsUserId } =
       await exchangeCodeForToken({
@@ -83,7 +115,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       });
 
     // -------------------------------------------------------------------------
-    // 4. Exchange for long-lived token
+    // 5. Exchange for long-lived token
     // -------------------------------------------------------------------------
     const { accessToken: longLivedToken, expiresIn } =
       await getLongLivedToken({
@@ -92,22 +124,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       });
 
     // -------------------------------------------------------------------------
-    // 5. Get user profile from Threads API
+    // 6. Get user profile from Threads API
     // -------------------------------------------------------------------------
     const client = new ThreadsClient(longLivedToken);
     const profile = await client.getProfile();
 
     // -------------------------------------------------------------------------
-    // 6. Encrypt and save token to D1 database
+    // 7. Encrypt and save token to D1 database
     // -------------------------------------------------------------------------
     const encryptedToken = await encryptToken(longLivedToken, encryptionKey);
     const now = Math.floor(Date.now() / 1000);
     const tokenExpiresAt = now + expiresIn;
-
-    const db = env.DB;
-    if (!db) {
-      throw new Error("D1 database binding (DB) is not configured");
-    }
 
     // Check if this Threads account is already connected
     const existing = await db
@@ -118,31 +145,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       .first<{ id: string; user_id: string }>();
 
     if (existing) {
-      // Verify the current session user owns this Threads account
-      const cookieStore = await cookies();
-      const sessionToken = cookieStore.get("better-auth.session_token")?.value;
-
-      if (!sessionToken) {
-        return NextResponse.redirect(
-          `${appUrl}/accounts?error=${encodeURIComponent("You must be logged in to connect a Threads account.")}`,
-        );
-      }
-
-      const sessionRow = await db
-        .prepare(
-          "SELECT user_id FROM session WHERE token = ? AND expires_at > ?",
-        )
-        .bind(sessionToken, Math.floor(Date.now() / 1000))
-        .first<{ user_id: string }>();
-
-      if (!sessionRow) {
-        return NextResponse.redirect(
-          `${appUrl}/accounts?error=${encodeURIComponent("Your session has expired. Please log in again.")}`,
-        );
-      }
-
       // Prevent User B from overwriting User A's token
-      if (existing.user_id !== sessionRow.user_id) {
+      if (existing.user_id !== appUserId) {
         return NextResponse.redirect(
           `${appUrl}/accounts?error=${encodeURIComponent("This Threads account is already connected to another user.")}`,
         );
@@ -175,32 +179,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         )
         .run();
     } else {
-      // Get the authenticated user's ID from the Better Auth session
-      const cookieStore = await cookies();
-      const sessionToken = cookieStore.get("better-auth.session_token")?.value;
-
-      if (!sessionToken) {
-        return NextResponse.redirect(
-          `${appUrl}/accounts?error=${encodeURIComponent("You must be logged in to connect a Threads account.")}`,
-        );
-      }
-
-      // Look up the user from the session
-      const sessionRow = await db
-        .prepare(
-          "SELECT user_id FROM session WHERE token = ? AND expires_at > ?",
-        )
-        .bind(sessionToken, Math.floor(Date.now() / 1000))
-        .first<{ user_id: string }>();
-
-      if (!sessionRow) {
-        return NextResponse.redirect(
-          `${appUrl}/accounts?error=${encodeURIComponent("Your session has expired. Please log in again.")}`,
-        );
-      }
-
-      const appUserId = sessionRow.user_id;
-
       const accountId = ulid();
 
       await db

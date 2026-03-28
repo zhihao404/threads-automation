@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { updateScheduleSchema, toggleScheduleSchema } from "@/lib/validations/schedule";
 import { buildCronExpression, isValidCron, getNextRunTime } from "@/lib/cron/parser";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+import { apiError } from "@/lib/api-response";
 
 /**
  * Verify the schedule belongs to the user and return it.
@@ -55,7 +56,7 @@ export async function GET(
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
+      return apiError("認証が必要です", 401);
     }
 
     const { id } = await context.params;
@@ -64,19 +65,13 @@ export async function GET(
 
     const schedule = await getScheduleForUser(id, userId, db);
     if (!schedule) {
-      return NextResponse.json(
-        { error: "スケジュールが見つかりません" },
-        { status: 404 },
-      );
+      return apiError("スケジュールが見つかりません", 404);
     }
 
     return NextResponse.json({ schedule });
   } catch (error) {
     console.error("GET /api/schedules/[id] error:", error);
-    return NextResponse.json(
-      { error: "スケジュールの取得に失敗しました" },
-      { status: 500 },
-    );
+    return apiError("スケジュールの取得に失敗しました", 500);
   }
 }
 
@@ -87,7 +82,7 @@ export async function PUT(
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
+      return apiError("認証が必要です", 401);
     }
 
     const { id } = await context.params;
@@ -95,10 +90,7 @@ export async function PUT(
     const parseResult = updateScheduleSchema.safeParse(body);
 
     if (!parseResult.success) {
-      return NextResponse.json(
-        { error: "入力内容に誤りがあります", details: parseResult.error.flatten() },
-        { status: 400 },
-      );
+      return apiError("入力内容に誤りがあります", 400);
     }
 
     const input = parseResult.data;
@@ -107,10 +99,7 @@ export async function PUT(
 
     const existing = await getScheduleForUser(id, userId, db);
     if (!existing) {
-      return NextResponse.json(
-        { error: "スケジュールが見つかりません" },
-        { status: 404 },
-      );
+      return apiError("スケジュールが見つかりません", 404);
     }
 
     // Validate template if provided
@@ -127,10 +116,7 @@ export async function PUT(
         .limit(1);
 
       if (!templateRows[0]) {
-        return NextResponse.json(
-          { error: "テンプレートが見つかりません" },
-          { status: 404 },
-        );
+        return apiError("テンプレートが見つかりません", 404);
       }
     }
 
@@ -143,10 +129,7 @@ export async function PUT(
     }
 
     if (!isValidCron(cronExpression)) {
-      return NextResponse.json(
-        { error: "無効なCron式です" },
-        { status: 400 },
-      );
+      return apiError("無効なCron式です", 400);
     }
 
     const timezone = input.timezone ?? existing.timezone;
@@ -177,10 +160,7 @@ export async function PUT(
     return NextResponse.json({ id, cronExpression, nextRunAt, isActive });
   } catch (error) {
     console.error("PUT /api/schedules/[id] error:", error);
-    return NextResponse.json(
-      { error: "スケジュールの更新に失敗しました" },
-      { status: 500 },
-    );
+    return apiError("スケジュールの更新に失敗しました", 500);
   }
 }
 
@@ -191,7 +171,7 @@ export async function PATCH(
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
+      return apiError("認証が必要です", 401);
     }
 
     const { id } = await context.params;
@@ -199,10 +179,7 @@ export async function PATCH(
     const parseResult = toggleScheduleSchema.safeParse(body);
 
     if (!parseResult.success) {
-      return NextResponse.json(
-        { error: "入力内容に誤りがあります" },
-        { status: 400 },
-      );
+      return apiError("入力内容に誤りがあります", 400);
     }
 
     const { isActive } = parseResult.data;
@@ -211,10 +188,7 @@ export async function PATCH(
 
     const existing = await getScheduleForUser(id, userId, db);
     if (!existing) {
-      return NextResponse.json(
-        { error: "スケジュールが見つかりません" },
-        { status: 404 },
-      );
+      return apiError("スケジュールが見つかりません", 404);
     }
 
     const now = new Date();
@@ -234,10 +208,7 @@ export async function PATCH(
     return NextResponse.json({ id, isActive, nextRunAt });
   } catch (error) {
     console.error("PATCH /api/schedules/[id] error:", error);
-    return NextResponse.json(
-      { error: "スケジュールの更新に失敗しました" },
-      { status: 500 },
-    );
+    return apiError("スケジュールの更新に失敗しました", 500);
   }
 }
 
@@ -248,7 +219,7 @@ export async function DELETE(
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
+      return apiError("認証が必要です", 401);
     }
 
     const { id } = await context.params;
@@ -257,10 +228,7 @@ export async function DELETE(
 
     const existing = await getScheduleForUser(id, userId, db);
     if (!existing) {
-      return NextResponse.json(
-        { error: "スケジュールが見つかりません" },
-        { status: 404 },
-      );
+      return apiError("スケジュールが見つかりません", 404);
     }
 
     await db
@@ -270,9 +238,6 @@ export async function DELETE(
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("DELETE /api/schedules/[id] error:", error);
-    return NextResponse.json(
-      { error: "スケジュールの削除に失敗しました" },
-      { status: 500 },
-    );
+    return apiError("スケジュールの削除に失敗しました", 500);
   }
 }

@@ -4,6 +4,7 @@ import { createDb } from "@/db";
 import { notifications, threadsAccounts } from "@/db/schema";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+import { apiError } from "@/lib/api-response";
 
 // =============================================================================
 // GET /api/notifications - List notifications for authenticated user
@@ -14,10 +15,7 @@ export async function GET(request: NextRequest) {
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 },
-      );
+      return apiError("認証が必要です", 401);
     }
 
     const { env } = await getCloudflareContext({ async: true });
@@ -91,10 +89,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ notifications: rows, total });
   } catch (error) {
     console.error("GET /api/notifications error:", error);
-    return NextResponse.json(
-      { error: "通知の取得に失敗しました" },
-      { status: 500 },
-    );
+    return apiError("通知の取得に失敗しました", 500);
   }
 }
 
@@ -107,10 +102,7 @@ export async function PATCH(request: NextRequest) {
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 },
-      );
+      return apiError("認証が必要です", 401);
     }
 
     const { env } = await getCloudflareContext({ async: true });
@@ -163,15 +155,9 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
-    return NextResponse.json(
-      { error: "ids または markAllRead を指定してください" },
-      { status: 400 },
-    );
+    return apiError("ids または markAllRead を指定してください", 400);
   } catch (error) {
     console.error("PATCH /api/notifications error:", error);
-    return NextResponse.json(
-      { error: "通知の更新に失敗しました" },
-      { status: 500 },
-    );
+    return apiError("通知の更新に失敗しました", 500);
   }
 }

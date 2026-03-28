@@ -21,7 +21,9 @@ function parseField(field: string, min: number, max: number): CronField {
     if (part === "*") {
       for (let i = min; i <= max; i++) values.add(i);
     } else if (part.includes("/")) {
-      const [range, stepStr] = part.split("/");
+      const slashParts = part.split("/");
+      const range = slashParts[0] ?? "*";
+      const stepStr = slashParts[1] ?? "";
       const step = parseInt(stepStr, 10);
       if (isNaN(step) || step <= 0) throw new Error(`Invalid step: ${stepStr}`);
 
@@ -30,9 +32,9 @@ function parseField(field: string, min: number, max: number): CronField {
 
       if (range !== "*") {
         if (range.includes("-")) {
-          const [s, e] = range.split("-").map(Number);
-          start = s;
-          end = e;
+          const rangeParts = range.split("-").map(Number);
+          start = rangeParts[0] ?? min;
+          end = rangeParts[1] ?? max;
         } else {
           start = parseInt(range, 10);
         }
@@ -42,9 +44,9 @@ function parseField(field: string, min: number, max: number): CronField {
         if (i >= min && i <= max) values.add(i);
       }
     } else if (part.includes("-")) {
-      const [startStr, endStr] = part.split("-");
-      const start = parseInt(startStr, 10);
-      const end = parseInt(endStr, 10);
+      const dashParts = part.split("-");
+      const start = parseInt(dashParts[0] ?? "", 10);
+      const end = parseInt(dashParts[1] ?? "", 10);
       if (isNaN(start) || isNaN(end)) throw new Error(`Invalid range: ${part}`);
       for (let i = start; i <= end; i++) {
         if (i >= min && i <= max) values.add(i);
@@ -76,12 +78,13 @@ function parseCron(expression: string): ParsedCron {
     throw new Error(`Cron expression must have 5 fields, got ${fields.length}`);
   }
 
+  const [f0, f1, f2, f3, f4] = fields as [string, string, string, string, string];
   return {
-    minutes: parseField(fields[0], 0, 59).values,
-    hours: parseField(fields[1], 0, 23).values,
-    daysOfMonth: parseField(fields[2], 1, 31).values,
-    months: parseField(fields[3], 1, 12).values,
-    daysOfWeek: parseField(fields[4], 0, 6).values,
+    minutes: parseField(f0, 0, 59).values,
+    hours: parseField(f1, 0, 23).values,
+    daysOfMonth: parseField(f2, 1, 31).values,
+    months: parseField(f3, 1, 12).values,
+    daysOfWeek: parseField(f4, 0, 6).values,
   };
 }
 
@@ -344,7 +347,7 @@ export function describeCron(cronExpression: string): string {
     const fields = cronExpression.trim().split(/\s+/);
     if (fields.length !== 5) return cronExpression;
 
-    const [minuteField, hourField, domField, monthField, dowField] = fields;
+    const [minuteField, hourField, domField, monthField, dowField] = fields as [string, string, string, string, string];
 
     const dayNames = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -360,13 +363,13 @@ export function describeCron(cronExpression: string): string {
 
     // Every N minutes
     if (minuteField.startsWith("*/") && hourField === "*" && domField === "*" && monthField === "*" && dowField === "*") {
-      const step = parseInt(minuteField.split("/")[1], 10);
+      const step = parseInt(minuteField.split("/")[1] ?? "", 10);
       return `${step}分ごと`;
     }
 
     // Every N hours
     if (minuteField !== "*" && hourField.startsWith("*/") && domField === "*" && monthField === "*" && dowField === "*") {
-      const step = parseInt(hourField.split("/")[1], 10);
+      const step = parseInt(hourField.split("/")[1] ?? "", 10);
       return `${step}時間ごと (${String(minute).padStart(2, "0")}分)`;
     }
 
@@ -380,8 +383,8 @@ export function describeCron(cronExpression: string): string {
       const dowValues = parseField(dowField, 0, 6).values;
       const dowArr = Array.from(dowValues).sort((a, b) => a - b);
 
-      if (dowArr.length === 1) {
-        return `毎週${dayNames[dowArr[0]]}曜日 ${timeStr}`;
+      if (dowArr.length === 1 && dowArr[0] !== undefined) {
+        return `毎週${dayNames[dowArr[0]] ?? ""}曜日 ${timeStr}`;
       }
       if (dowArr.length === 5 && !dowArr.includes(0) && !dowArr.includes(6)) {
         return `平日 ${timeStr}`;
@@ -389,7 +392,7 @@ export function describeCron(cronExpression: string): string {
       if (dowArr.length === 2 && dowArr.includes(0) && dowArr.includes(6)) {
         return `週末 ${timeStr}`;
       }
-      const dayList = dowArr.map((d) => dayNames[d]).join("・");
+      const dayList = dowArr.map((d) => dayNames[d] ?? "").join("・");
       return `毎週${dayList}曜日 ${timeStr}`;
     }
 
@@ -398,7 +401,7 @@ export function describeCron(cronExpression: string): string {
       const domValues = parseField(domField, 1, 31).values;
       const domArr = Array.from(domValues).sort((a, b) => a - b);
 
-      if (domArr.length === 1) {
+      if (domArr.length === 1 && domArr[0] !== undefined) {
         return `毎月${domArr[0]}日 ${timeStr}`;
       }
       const dayList = domArr.join("・");
@@ -414,7 +417,7 @@ export function describeCron(cronExpression: string): string {
       if (domField !== "*") {
         const domValues = parseField(domField, 1, 31).values;
         const domArr = Array.from(domValues).sort((a, b) => a - b);
-        return `${monthNames}${domArr[0]}日 ${timeStr}`;
+        return `${monthNames}${domArr[0] ?? 1}日 ${timeStr}`;
       }
 
       return `${monthNames} ${timeStr}`;
@@ -446,9 +449,9 @@ export function buildCronExpression(config: ScheduleConfig): string {
     return config.customCron;
   }
 
-  const [hourStr, minuteStr] = config.time.split(":");
-  const hour = parseInt(hourStr, 10);
-  const minute = parseInt(minuteStr, 10);
+  const timeParts = config.time.split(":");
+  const hour = parseInt(timeParts[0] ?? "0", 10);
+  const minute = parseInt(timeParts[1] ?? "0", 10);
 
   switch (config.frequency) {
     case "daily":
@@ -477,12 +480,13 @@ export function isValidCron(expression: string): boolean {
     const fields = expression.trim().split(/\s+/);
     if (fields.length !== 5) return false;
 
+    const [v0, v1, v2, v3, v4] = fields as [string, string, string, string, string];
     // Try parsing each field
-    parseField(fields[0], 0, 59);
-    parseField(fields[1], 0, 23);
-    parseField(fields[2], 1, 31);
-    parseField(fields[3], 1, 12);
-    parseField(fields[4], 0, 6);
+    parseField(v0, 0, 59);
+    parseField(v1, 0, 23);
+    parseField(v2, 1, 31);
+    parseField(v3, 1, 12);
+    parseField(v4, 0, 6);
 
     return true;
   } catch {

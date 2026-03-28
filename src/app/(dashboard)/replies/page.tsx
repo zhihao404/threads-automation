@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { RefreshCw, MessageCircle, Loader2, AlertTriangle } from "lucide-react";
+import { RefreshCw, MessageCircle, AlertTriangle } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -111,8 +111,8 @@ export default function RepliesPage() {
         };
         if (!cancelled) {
           setAccounts(data.accounts || []);
-          if (data.accounts?.length > 0) {
-            setSelectedAccountId(data.accounts[0].id);
+          if (data.accounts?.length && data.accounts.length > 0) {
+            setSelectedAccountId(data.accounts[0]!.id);
           }
         }
       } catch {

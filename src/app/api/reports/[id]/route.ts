@@ -4,6 +4,7 @@ import { createDb } from "@/db";
 import { threadsAccounts, reports } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+import { apiError } from "@/lib/api-response";
 
 // GET /api/reports/[id] - Get full report with HTML content
 export async function GET(
@@ -13,7 +14,7 @@ export async function GET(
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
+      return apiError("認証が必要です", 401);
     }
 
     const { id } = await params;
@@ -28,13 +29,10 @@ export async function GET(
       .limit(1);
 
     if (reportRows.length === 0) {
-      return NextResponse.json(
-        { error: "レポートが見つかりません" },
-        { status: 404 }
-      );
+      return apiError("レポートが見つかりません", 404);
     }
 
-    const report = reportRows[0];
+    const report = reportRows[0]!;
 
     // Verify the report belongs to the user's account
     const accountRows = await db
@@ -49,10 +47,7 @@ export async function GET(
       .limit(1);
 
     if (accountRows.length === 0) {
-      return NextResponse.json(
-        { error: "レポートが見つかりません" },
-        { status: 404 }
-      );
+      return apiError("レポートが見つかりません", 404);
     }
 
     return NextResponse.json({
@@ -72,10 +67,7 @@ export async function GET(
     });
   } catch (error) {
     console.error("GET /api/reports/[id] error:", error);
-    return NextResponse.json(
-      { error: "レポートの取得に失敗しました" },
-      { status: 500 }
-    );
+    return apiError("レポートの取得に失敗しました", 500);
   }
 }
 
@@ -87,7 +79,7 @@ export async function DELETE(
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
+      return apiError("認証が必要です", 401);
     }
 
     const { id } = await params;
@@ -102,10 +94,7 @@ export async function DELETE(
       .limit(1);
 
     if (reportRows.length === 0) {
-      return NextResponse.json(
-        { error: "レポートが見つかりません" },
-        { status: 404 }
-      );
+      return apiError("レポートが見つかりません", 404);
     }
 
     // Verify ownership
@@ -114,17 +103,14 @@ export async function DELETE(
       .from(threadsAccounts)
       .where(
         and(
-          eq(threadsAccounts.id, reportRows[0].accountId),
+          eq(threadsAccounts.id, reportRows[0]!.accountId),
           eq(threadsAccounts.userId, userId)
         )
       )
       .limit(1);
 
     if (accountRows.length === 0) {
-      return NextResponse.json(
-        { error: "レポートが見つかりません" },
-        { status: 404 }
-      );
+      return apiError("レポートが見つかりません", 404);
     }
 
     await db.delete(reports).where(eq(reports.id, id));
@@ -132,9 +118,6 @@ export async function DELETE(
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("DELETE /api/reports/[id] error:", error);
-    return NextResponse.json(
-      { error: "レポートの削除に失敗しました" },
-      { status: 500 }
-    );
+    return apiError("レポートの削除に失敗しました", 500);
   }
 }

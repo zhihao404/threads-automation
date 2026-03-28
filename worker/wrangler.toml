@@ -1,3 +1,9 @@
+# Required secrets (set via `wrangler secret put`):
+# - ENCRYPTION_KEY: Used for encrypting/decrypting Threads access tokens
+# - AI provider keys for report generation (at least one required):
+#   - ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY
+#   - Optionally: AI_PROVIDER, ANTHROPIC_MODEL, OPENAI_MODEL, GEMINI_MODEL
+
 name = "threads-automation-worker"
 main = "scheduled-worker.ts"
 compatibility_date = "2025-01-01"

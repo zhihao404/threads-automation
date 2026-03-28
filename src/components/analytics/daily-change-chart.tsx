@@ -35,7 +35,7 @@ function CustomTooltip({
 }) {
   if (!active || !payload || payload.length === 0) return null;
 
-  const data = payload[0].payload;
+  const data = payload[0]!.payload;
   const dateStr = label
     ? format(parseISO(label), "M月d日(E)", { locale: ja })
     : "";

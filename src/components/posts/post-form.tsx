@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -87,6 +87,12 @@ export function PostForm({ accounts, initialContent, initialTopicTag }: PostForm
   const isOverLimit = charRemaining < 0;
   const isNearLimit = charRemaining <= 50 && charRemaining >= 0;
 
+  // Memoize the selected account to avoid repeated .find() calls
+  const selectedAccount = useMemo(
+    () => accounts.find((a) => a.id === accountId),
+    [accounts, accountId]
+  );
+
   // Handle media type switching
   const handleMediaTypeChange = useCallback(
     (newType: MediaType) => {
@@ -169,9 +175,9 @@ export function PostForm({ accounts, initialContent, initialTopicTag }: PostForm
       }
 
       // Check if selected account token is valid
-      const selectedAccount = accounts.find((a) => a.id === accountId);
+      const matchedAccount = accounts.find((a) => a.id === accountId);
       if (
-        selectedAccount?.tokenStatus === "expired" &&
+        matchedAccount?.tokenStatus === "expired" &&
         status === "publish"
       ) {
         newErrors.accountId =
@@ -586,23 +592,17 @@ export function PostForm({ accounts, initialContent, initialTopicTag }: PostForm
             {content.trim() || uploadedFiles.length > 0 ? (
               <div className="space-y-3">
                 {/* Account info */}
-                {accountId && (
+                {accountId && selectedAccount && (
                   <div className="flex items-center gap-2">
                     <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center text-xs font-medium">
-                      {accounts
-                        .find((a) => a.id === accountId)
-                        ?.username?.charAt(0)
-                        .toUpperCase() || "?"}
+                      {selectedAccount.username?.charAt(0).toUpperCase() || "?"}
                     </div>
                     <div>
                       <p className="text-sm font-medium leading-none">
-                        {accounts.find((a) => a.id === accountId)
-                          ?.displayName ||
-                          accounts.find((a) => a.id === accountId)?.username}
+                        {selectedAccount.displayName || selectedAccount.username}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        @
-                        {accounts.find((a) => a.id === accountId)?.username}
+                        @{selectedAccount.username}
                       </p>
                     </div>
                   </div>
@@ -629,6 +629,7 @@ export function PostForm({ accounts, initialContent, initialTopicTag }: PostForm
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     {mediaType === "IMAGE" && (
                       <>
+                        {/* eslint-disable-next-line jsx-a11y/alt-text */}
                         <Image className="h-3.5 w-3.5" />
                         <span>画像が添付されます</span>
                       </>

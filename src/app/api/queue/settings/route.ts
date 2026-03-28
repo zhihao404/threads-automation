@@ -107,9 +107,9 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    if (typeof intervalMinutes !== "number" || intervalMinutes < 15) {
+    if (typeof intervalMinutes !== "number" || intervalMinutes < 15 || intervalMinutes > 10080) {
       return NextResponse.json(
-        { error: "intervalMinutesは15以上の数値が必要です" },
+        { error: "intervalMinutesは15以上10080以下の数値が必要です" },
         { status: 400 }
       );
     }

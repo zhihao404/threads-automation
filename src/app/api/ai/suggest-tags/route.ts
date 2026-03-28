@@ -9,28 +9,20 @@ import { incrementUsage } from "@/lib/plans/limits";
 import { AIConfigurationError, resolveAIProvider } from "@/lib/ai/provider";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+import { apiError } from "@/lib/api-response";
 
 export async function POST(request: NextRequest) {
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 }
-      );
+      return apiError("認証が必要です", 401);
     }
 
     const body = await request.json();
     const parseResult = suggestTagsSchema.safeParse(body);
 
     if (!parseResult.success) {
-      return NextResponse.json(
-        {
-          error: "入力内容に誤りがあります",
-          details: parseResult.error.flatten(),
-        },
-        { status: 400 }
-      );
+      return apiError("入力内容に誤りがあります", 400);
     }
 
     const input = parseResult.data;
@@ -40,14 +32,10 @@ export async function POST(request: NextRequest) {
     // Rate limiting: 20 requests per minute
     const rateLimit = await checkRateLimit(db, userId, "ai/suggest-tags", 20, 60_000);
     if (!rateLimit.allowed) {
-      return NextResponse.json(
-        { error: "リクエストが多すぎます。しばらく待ってからお試しください。" },
-        {
-          status: 429,
-          headers: {
-            "Retry-After": String(Math.ceil((rateLimit.resetAt - Date.now()) / 1000)),
-          },
-        },
+      return apiError(
+        "リクエストが多すぎます。しばらく待ってからお試しください。",
+        429,
+        { "Retry-After": String(Math.ceil((rateLimit.resetAt - Date.now()) / 1000)) },
       );
     }
 
@@ -60,16 +48,13 @@ export async function POST(request: NextRequest) {
       aiConfig = resolveAIProvider(env);
     } catch (error) {
       if (error instanceof AIConfigurationError) {
-        return NextResponse.json({ error: error.message }, { status: 503 });
+        return apiError(error.message, 503);
       }
       throw error;
     }
 
     if (!aiConfig) {
-      return NextResponse.json(
-        { error: "AI機能が設定されていません。管理者にお問い合わせください。" },
-        { status: 503 }
-      );
+      return apiError("AI機能が設定されていません。管理者にお問い合わせください。", 503);
     }
 
     const tags = await suggestTopicTags(aiConfig, input.content, input.count);
@@ -81,15 +66,12 @@ export async function POST(request: NextRequest) {
     console.error("POST /api/ai/suggest-tags error:", error);
 
     if (error && typeof error === "object" && "status" in error) {
-      const apiError = error as { status: number };
-      if (apiError.status === 429) {
-        return NextResponse.json(
-          { error: "リクエストが多すぎます。しばらく待ってからお試しください。" },
-          { status: 429 }
-        );
+      const apiErr = error as { status: number };
+      if (apiErr.status === 429) {
+        return apiError("リクエストが多すぎます。しばらく待ってからお試しください。", 429);
       }
     }
 
-    return NextResponse.json({ error: "処理中にエラーが発生しました" }, { status: 500 });
+    return apiError("処理中にエラーが発生しました", 500);
   }
 }

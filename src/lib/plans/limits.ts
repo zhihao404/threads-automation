@@ -253,27 +253,10 @@ export async function incrementUsage(
   const period = getCurrentPeriod();
   const validType = type as "post" | "ai_generation" | "schedule" | "template";
 
-  // Try to update existing record first with atomic increment
-  const existing = await db
-    .select({ id: usageRecords.id })
-    .from(usageRecords)
-    .where(
-      and(
-        eq(usageRecords.userId, userId),
-        eq(usageRecords.type, validType),
-        eq(usageRecords.periodStart, period.start),
-      ),
-    )
-    .limit(1);
-
-  if (existing[0]) {
-    // Atomic increment to avoid race condition
-    await db
-      .update(usageRecords)
-      .set({ count: sql`${usageRecords.count} + 1` })
-      .where(eq(usageRecords.id, existing[0].id));
-  } else {
-    await db.insert(usageRecords).values({
+  // UPSERT: insert or increment on conflict
+  await db
+    .insert(usageRecords)
+    .values({
       id: ulid(),
       userId,
       type: validType,
@@ -281,8 +264,11 @@ export async function incrementUsage(
       periodStart: period.start,
       periodEnd: period.end,
       createdAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: [usageRecords.userId, usageRecords.type, usageRecords.periodStart],
+      set: { count: sql`${usageRecords.count} + 1` },
     });
-  }
 }
 
 /**

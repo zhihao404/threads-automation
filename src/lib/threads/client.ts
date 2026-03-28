@@ -213,7 +213,7 @@ export class ThreadsClient {
     await Promise.all(
       params.children.map(async (child, index) => {
         if (child.mediaType === "VIDEO") {
-          await this.waitForContainerReady(childIds[index]);
+          await this.waitForContainerReady(childIds[index]!);
         }
       }),
     );
@@ -372,7 +372,7 @@ export class ThreadsClient {
     for (const entry of response.data) {
       const metricName = entry.name as keyof PostInsights;
       if (metricName in result && entry.values.length > 0) {
-        result[metricName] = entry.values[0].value;
+        result[metricName] = entry.values[0]!.value;
       }
     }
 
@@ -430,7 +430,7 @@ export class ThreadsClient {
       );
     }
 
-    return response.data[0];
+    return response.data[0]!;
   }
 
   // ===========================================================================

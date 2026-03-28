@@ -338,7 +338,7 @@ function PostDetailDialog({
 }: PostDetailDialogProps) {
   if (!post) return null;
 
-  const mediaInfo = mediaTypeConfig[post.mediaType] || mediaTypeConfig.TEXT;
+  const mediaInfo = mediaTypeConfig[post.mediaType] ?? mediaTypeConfig["TEXT"]!;
   const MediaIcon = mediaInfo.icon;
   const colorIndex = accountColorMap.get(post.accountId) ?? 0;
 

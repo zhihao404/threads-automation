@@ -199,17 +199,23 @@ export const recurringSchedules = sqliteTable("recurring_schedules", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });
 
-export const postQueue = sqliteTable("post_queue", {
-  id: text("id").primaryKey(), // ULID
-  accountId: text("account_id")
-    .notNull()
-    .references(() => threadsAccounts.id, { onDelete: "cascade" }),
-  postId: text("post_id")
-    .notNull()
-    .references(() => posts.id, { onDelete: "cascade" }),
-  position: integer("position").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+export const postQueue = sqliteTable(
+  "post_queue",
+  {
+    id: text("id").primaryKey(), // ULID
+    accountId: text("account_id")
+      .notNull()
+      .references(() => threadsAccounts.id, { onDelete: "cascade" }),
+    postId: text("post_id")
+      .notNull()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("post_queue_post_id_idx").on(table.postId),
+  ],
+);
 
 // =============================================================================
 // Relations
@@ -482,6 +488,7 @@ export const usageRecords = sqliteTable(
   },
   (table) => [
     index("usage_records_user_period_idx").on(table.userId, table.periodStart),
+    uniqueIndex("usage_records_user_type_period_idx").on(table.userId, table.type, table.periodStart),
   ],
 );
 

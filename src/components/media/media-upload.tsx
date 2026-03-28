@@ -56,17 +56,19 @@ export function MediaUpload({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragCounterRef = useRef(0);
 
+  // Keep a ref to the latest fileStates so the unmount cleanup always sees current data
+  const fileStatesRef = useRef(fileStates);
+  fileStatesRef.current = fileStates;
+
   // Clean up preview URLs on unmount
   useEffect(() => {
     return () => {
-      fileStates.forEach((fs) => {
+      fileStatesRef.current.forEach((fs) => {
         if (fs.previewUrl) {
           URL.revokeObjectURL(fs.previewUrl);
         }
       });
     };
-    // Only run cleanup on unmount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const totalFiles = uploadedFiles.length + fileStates.filter((f) => f.status !== "error").length;
@@ -365,6 +367,7 @@ export function MediaUpload({
               className="group relative rounded-lg border bg-card overflow-hidden"
             >
               {file.contentType.startsWith("image/") ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={file.url}
                   alt="アップロード済み"
@@ -413,6 +416,7 @@ export function MediaUpload({
             >
               {/* Preview */}
               {fileState.previewUrl && mediaType === "image" ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={fileState.previewUrl}
                   alt={fileState.file.name}

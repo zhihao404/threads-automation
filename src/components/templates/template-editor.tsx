@@ -161,12 +161,6 @@ export function TemplateEditor({
   const builtinValues = getBuiltinVariableValues();
   const renderedPreview = renderTemplate(content, builtinValues);
 
-  // Render content with highlighted variables
-  const highlightedContent = content.replace(
-    /\{\{(\w+)\}\}/g,
-    (match) => match
-  );
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">

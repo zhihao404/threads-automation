@@ -7,7 +7,7 @@ import { getAuthenticatedUserId } from "@/lib/auth-helpers";
 
 function parsePeriodDays(period: string): number {
   const match = period.match(/^(\d+)d$/);
-  if (match) {
+  if (match?.[1]) {
     const days = parseInt(match[1], 10);
     return Math.min(365, Math.max(1, days));
   }

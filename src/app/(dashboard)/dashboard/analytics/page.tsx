@@ -257,7 +257,7 @@ export default function AnalyticsPage() {
         );
         setAccounts(accs);
         if (accs.length > 0 && !selectedAccountId) {
-          setSelectedAccountId(accs[0].id);
+          setSelectedAccountId(accs[0]!.id);
         }
       } catch {
         // ignore
@@ -266,7 +266,8 @@ export default function AnalyticsPage() {
       }
     }
     fetchAccounts();
-  }, [selectedAccountId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Fetch overview data
   const fetchOverview = useCallback(async () => {

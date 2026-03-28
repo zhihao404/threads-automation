@@ -69,6 +69,7 @@ export function MediaPreview({
           )}
           onClick={() => openLightbox(0)}
         >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={mediaUrls[0]}
             alt="投稿画像"
@@ -105,6 +106,7 @@ export function MediaPreview({
         </div>
         {/* Attempt to show video thumbnail if possible */}
         {mediaUrls[0] && !isVideoUrl(mediaUrls[0]) ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={mediaUrls[0]}
             alt="動画サムネイル"
@@ -157,6 +159,7 @@ export function MediaPreview({
                   <Play className="h-5 w-5 text-muted-foreground" />
                 </div>
               ) : (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={url}
                   alt={`カルーセル ${index + 1}`}
@@ -212,7 +215,7 @@ function Lightbox({
   onClose: () => void;
   onNavigate: (direction: "prev" | "next") => void;
 }) {
-  const currentUrl = urls[currentIndex];
+  const currentUrl = urls[currentIndex]!;
 
   return (
     <div
@@ -262,6 +265,7 @@ function Lightbox({
             <span className="text-sm">動画プレビュー</span>
           </div>
         ) : (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={currentUrl}
             alt={`メディア ${currentIndex + 1}`}

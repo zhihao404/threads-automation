@@ -129,8 +129,8 @@ export function DayDetail({
               const colorIndex =
                 accountColorMap.get(post.accountId) ??
                 getAccountColorIndex(post.accountId);
-              const mediaInfo = mediaTypeIcons[post.mediaType] ||
-                mediaTypeIcons.TEXT;
+              const mediaInfo = mediaTypeIcons[post.mediaType] ??
+                mediaTypeIcons["TEXT"]!;
               const MediaIcon = mediaInfo.icon;
               const scheduledTime = format(
                 parseISO(post.scheduledAt),

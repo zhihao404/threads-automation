@@ -1,18 +1,15 @@
 // =============================================================================
 // Worker Database Helper
-// Creates a Drizzle ORM instance from a D1 binding (no getCloudflareContext)
+// Re-exports from the shared DB module for backward compatibility
 // =============================================================================
 
-import { drizzle } from "drizzle-orm/d1";
-import * as schema from "../src/db/schema";
+import { createDb } from "../src/db";
+import type { Database } from "../src/db";
 
 /**
  * Creates a Drizzle database instance for use in the worker context.
- * Unlike the Next.js app which uses getCloudflareContext, the worker
- * receives the D1 binding directly via the env parameter.
+ * Delegates to the shared createDb function.
  */
-export function createWorkerDb(d1: D1Database) {
-  return drizzle(d1, { schema });
-}
+export const createWorkerDb = createDb;
 
-export type WorkerDatabase = ReturnType<typeof createWorkerDb>;
+export type WorkerDatabase = Database;

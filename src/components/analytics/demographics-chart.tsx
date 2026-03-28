@@ -38,7 +38,7 @@ function BarTooltipContent({
 }) {
   if (!active || !payload || payload.length === 0) return null;
 
-  const data = payload[0].payload;
+  const data = payload[0]!.payload;
 
   return (
     <div className="rounded-lg border bg-background p-3 shadow-md">
@@ -72,7 +72,7 @@ function PieTooltipContent({
 }) {
   if (!active || !payload || payload.length === 0) return null;
 
-  const data = payload[0].payload;
+  const data = payload[0]!.payload;
 
   return (
     <div className="rounded-lg border bg-background p-3 shadow-md">

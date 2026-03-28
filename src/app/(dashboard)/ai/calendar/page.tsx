@@ -9,7 +9,6 @@ import {
   Sparkles,
   Loader2,
   AlertCircle,
-  RefreshCw,
   CalendarPlus,
   Users,
   Settings2,
@@ -34,9 +33,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { CalendarSuggestionCard } from "@/components/ai/calendar-suggestion-card";
-import { cn } from "@/lib/utils";
 import type { CalendarSuggestion } from "@/lib/ai/calendar";
 
 interface ThreadsAccount {
@@ -95,7 +92,7 @@ export default function AICalendarPage() {
         const data = (await res.json()) as { accounts?: ThreadsAccount[] };
         setAccounts(data.accounts || []);
         if (data.accounts && data.accounts.length > 0) {
-          setSelectedAccountId(data.accounts[0].id);
+          setSelectedAccountId(data.accounts[0]!.id);
         }
       } catch {
         setError("アカウントの取得に失敗しました");
@@ -160,7 +157,7 @@ export default function AICalendarPage() {
       return;
     }
 
-    const suggestion = suggestions[index];
+    const suggestion = suggestions[index]!;
     const scheduledAt = `${suggestion.date}T${suggestion.time}:00`;
 
     try {
@@ -200,8 +197,8 @@ export default function AICalendarPage() {
       if (skippedIndices.has(i) || scheduledIndices.has(i)) continue;
       await handleSchedulePost(
         i,
-        suggestions[i].content,
-        suggestions[i].topicTag
+        suggestions[i]!.content,
+        suggestions[i]!.topicTag
       );
     }
   };
@@ -212,7 +209,7 @@ export default function AICalendarPage() {
     if (!suggestionsByDate[suggestion.date]) {
       suggestionsByDate[suggestion.date] = [];
     }
-    suggestionsByDate[suggestion.date].push({ index, suggestion });
+    suggestionsByDate[suggestion.date]!.push({ index, suggestion });
   });
 
   const sortedDates = Object.keys(suggestionsByDate).sort();
@@ -462,7 +459,7 @@ export default function AICalendarPage() {
 
           {/* Timeline by date */}
           {sortedDates.map((dateStr) => {
-            const items = suggestionsByDate[dateStr];
+            const items = suggestionsByDate[dateStr]!;
             let dateLabel: string;
             try {
               const parsed = parseISO(dateStr);

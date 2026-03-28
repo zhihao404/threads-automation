@@ -7,15 +7,13 @@ import { ulid } from "ulid";
 import { createScheduleSchema } from "@/lib/validations/schedule";
 import { buildCronExpression, isValidCron, getNextRunTime } from "@/lib/cron/parser";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+import { apiError } from "@/lib/api-response";
 
 export async function GET(request: NextRequest) {
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 },
-      );
+      return apiError("認証が必要です", 401);
     }
 
     const { env } = await getCloudflareContext({ async: true });
@@ -76,10 +74,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ schedules: scheduleRows, total });
   } catch (error) {
     console.error("GET /api/schedules error:", error);
-    return NextResponse.json(
-      { error: "スケジュールの取得に失敗しました" },
-      { status: 500 },
-    );
+    return apiError("スケジュールの取得に失敗しました", 500);
   }
 }
 
@@ -87,20 +82,14 @@ export async function POST(request: NextRequest) {
   try {
     const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json(
-        { error: "認証が必要です" },
-        { status: 401 },
-      );
+      return apiError("認証が必要です", 401);
     }
 
     const body = await request.json();
     const parseResult = createScheduleSchema.safeParse(body);
 
     if (!parseResult.success) {
-      return NextResponse.json(
-        { error: "入力内容に誤りがあります", details: parseResult.error.flatten() },
-        { status: 400 },
-      );
+      return apiError("入力内容に誤りがあります", 400);
     }
 
     const input = parseResult.data;
@@ -120,10 +109,7 @@ export async function POST(request: NextRequest) {
       .limit(1);
 
     if (!accountRows[0]) {
-      return NextResponse.json(
-        { error: "アカウントが見つかりません" },
-        { status: 404 },
-      );
+      return apiError("アカウントが見つかりません", 404);
     }
 
     // Verify template if provided
@@ -140,10 +126,7 @@ export async function POST(request: NextRequest) {
         .limit(1);
 
       if (!templateRows[0]) {
-        return NextResponse.json(
-          { error: "テンプレートが見つかりません" },
-          { status: 404 },
-        );
+        return apiError("テンプレートが見つかりません", 404);
       }
     }
 
@@ -154,17 +137,11 @@ export async function POST(request: NextRequest) {
     } else if (input.schedule) {
       cronExpression = buildCronExpression(input.schedule);
     } else {
-      return NextResponse.json(
-        { error: "スケジュールを設定してください" },
-        { status: 400 },
-      );
+      return apiError("スケジュールを設定してください", 400);
     }
 
     if (!isValidCron(cronExpression)) {
-      return NextResponse.json(
-        { error: "無効なCron式です" },
-        { status: 400 },
-      );
+      return apiError("無効なCron式です", 400);
     }
 
     const timezone = input.timezone || "Asia/Tokyo";
@@ -190,9 +167,6 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     console.error("POST /api/schedules error:", error);
-    return NextResponse.json(
-      { error: "スケジュールの作成に失敗しました" },
-      { status: 500 },
-    );
+    return apiError("スケジュールの作成に失敗しました", 500);
   }
 }

@@ -3,8 +3,6 @@
 import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -76,7 +74,7 @@ export function VariableInserter({ onInsert }: VariableInserterProps) {
           <DropdownMenuSeparator />
           {BUILTIN_VARIABLE_INFO.map((v) => {
             const Icon = v.icon;
-            const preview = BUILTIN_VARIABLES[v.key]();
+            const preview = BUILTIN_VARIABLES[v.key]?.() ?? "";
             return (
               <DropdownMenuItem
                 key={v.key}

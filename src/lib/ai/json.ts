@@ -1,7 +1,7 @@
 export function extractJsonText(rawText: string): string {
   const trimmed = rawText.trim();
   const jsonMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
-  return jsonMatch ? jsonMatch[1].trim() : trimmed;
+  return jsonMatch?.[1] ? jsonMatch[1].trim() : trimmed;
 }
 
 export function parseJsonResponse<T>(
