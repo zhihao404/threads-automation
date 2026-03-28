@@ -10,6 +10,12 @@ import { incrementUsage } from "@/lib/plans/limits";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
 import { apiError } from "@/lib/api-response";
 import { listUserPosts } from "@/lib/posts/service";
+import {
+  canPublish,
+  recordPublish,
+  recordApiCall,
+  predictQuotaExhaustion,
+} from "@/lib/threads/rate-gate";
 
 export async function GET(request: NextRequest) {
   try {
@@ -93,6 +99,16 @@ export async function POST(request: NextRequest) {
     const postId = ulid();
 
     if (input.status === "publish") {
+      // Check Threads profile-level post rate limit before publishing
+      const quota = await canPublish(db, input.accountId);
+
+      if (!quota.allowed) {
+        return apiError(
+          `投稿の24時間上限（${quota.limit}件）に達しました。${quota.windowResetsAt ? `リセット: ${new Date(quota.windowResetsAt * 1000).toISOString()}` : ""}`,
+          429,
+        );
+      }
+
       // Publish immediately via Threads API
       try {
         const { decryptToken } = await import("@/lib/threads/encryption");
@@ -164,6 +180,11 @@ export async function POST(request: NextRequest) {
 
         await incrementUsage(db, userId, "post");
 
+        // Record Threads profile-level usage for rate gate tracking
+        await recordPublish(db, input.accountId);
+        // Each publish flow makes multiple API calls (create container + publish + optional getPost)
+        await recordApiCall(db, input.accountId);
+
         return NextResponse.json(
           { id: postId, status: "published", threadsMediaId: publishedMediaId },
           { status: 201 }
@@ -196,6 +217,9 @@ export async function POST(request: NextRequest) {
         return apiError("予約投稿には日時の指定が必要です", 400);
       }
 
+      // Predict whether this scheduled post will push the profile over its post limit
+      const prediction = await predictQuotaExhaustion(db, input.accountId, 1, "post");
+
       await db.insert(posts).values({
         id: postId,
         accountId: input.accountId,
@@ -213,8 +237,14 @@ export async function POST(request: NextRequest) {
       await incrementUsage(db, userId, "post");
 
       return NextResponse.json(
-        { id: postId, status: "scheduled" },
-        { status: 201 }
+        {
+          id: postId,
+          status: "scheduled",
+          ...(prediction.willExceed && {
+            warning: `この予約投稿を含めると24時間の投稿上限（${prediction.limit}件）を超過する可能性があります。現在の使用量: ${prediction.currentUsage}件`,
+          }),
+        },
+        { status: 201 },
       );
     } else {
       // draft

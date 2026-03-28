@@ -1,12 +1,7 @@
 import { NextRequest } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { createDb } from "@/db";
-import {
-  storeRawEvent,
-  markEventProcessed,
-  processWebhookPayload,
-  type WebhookPayload,
-} from "@/lib/webhooks/processor";
+import { handleWebhookWithProtection } from "@/lib/webhooks/processor";
 
 // =============================================================================
 // GET /api/webhooks/threads - Verification challenge
@@ -115,30 +110,18 @@ export async function POST(request: NextRequest) {
 
   const db = createDb(env.DB);
 
-  // Store the raw event immediately for audit/debugging
-  let eventId: string;
+  // Handle with deduplication, replay protection, and audit logging
   try {
-    eventId = await storeRawEvent(db, "threads", rawBody);
-  } catch (error) {
-    console.error("Failed to store raw webhook event:", error);
-    // Still return 200 to prevent Meta from retrying
-    return new Response("OK", { status: 200 });
-  }
+    const result = await handleWebhookWithProtection(db, rawBody);
 
-  // Parse and process the payload
-  try {
-    const payload: WebhookPayload = JSON.parse(rawBody);
-
-    if (!payload.entry || !Array.isArray(payload.entry)) {
-      console.warn("Webhook: invalid payload structure, no entry array");
-      return new Response("OK", { status: 200 });
+    if (result.status === "duplicate") {
+      console.log("Webhook: duplicate event ignored");
+    } else if (result.status === "replay_rejected") {
+      console.warn("Webhook: replay event rejected (too old)");
     }
-
-    await processWebhookPayload(db, payload);
-    await markEventProcessed(db, eventId);
   } catch (error) {
-    console.error("Failed to process webhook payload:", error);
-    // Return 200 anyway - we have the raw event stored for later reprocessing
+    console.error("Failed to handle webhook:", error);
+    // Still return 200 to prevent Meta from retrying endlessly
   }
 
   return new Response("OK", { status: 200 });

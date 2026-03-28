@@ -74,6 +74,9 @@ export const threadsAccounts = sqliteTable(
     profilePictureUrl: text("profile_picture_url"),
     biography: text("biography"),
     isVerified: integer("is_verified", { mode: "boolean" }).notNull().default(false),
+    lastRefreshAt: integer("last_refresh_at", { mode: "timestamp" }),
+    refreshFailureCount: integer("refresh_failure_count").notNull().default(0),
+    refreshError: text("refresh_error"),
     createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
   },
@@ -112,7 +115,13 @@ export const posts = sqliteTable(
     publishedAt: integer("published_at", { mode: "timestamp" }),
     errorMessage: text("error_message"),
     retryCount: integer("retry_count").notNull().default(0),
+    maxRetries: integer("max_retries").notNull().default(3),
     permalink: text("permalink"),
+    dedupeKey: text("dedupe_key"), // SHA-256 hash of account+content+scheduledAt for idempotency
+    containerId: text("container_id"), // Threads media container ID for publish resumption
+    lastErrorCategory: text("last_error_category", {
+      enum: ["retryable", "non_retryable", "manual_intervention"],
+    }), // error classification for retry logic
     createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
   },
@@ -120,6 +129,7 @@ export const posts = sqliteTable(
     index("posts_account_id_idx").on(table.accountId),
     index("posts_status_idx").on(table.status),
     index("posts_scheduled_at_idx").on(table.scheduledAt),
+    uniqueIndex("posts_dedupe_key_idx").on(table.dedupeKey),
   ],
 );
 
@@ -228,6 +238,8 @@ export const usersRelations = relations(users, ({ many }) => ({
   postTemplates: many(postTemplates),
   subscriptions: many(subscriptions),
   usageRecords: many(usageRecords),
+  replyDrafts: many(replyDrafts),
+  replyDecisions: many(replyDecisions),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -255,6 +267,8 @@ export const threadsAccountsRelations = relations(threadsAccounts, ({ one, many 
   postQueue: many(postQueue),
   reports: many(reports),
   notifications: many(notifications),
+  profileApiUsage: many(profileApiUsage),
+  inboxItems: many(inboxItems),
 }));
 
 export const postsRelations = relations(posts, ({ one, many }) => ({
@@ -264,6 +278,7 @@ export const postsRelations = relations(posts, ({ one, many }) => ({
   }),
   metrics: many(postMetrics),
   queueEntries: many(postQueue),
+  publishAttempts: many(publishAttempts),
 }));
 
 export const postMetricsRelations = relations(postMetrics, ({ one }) => ({
@@ -410,13 +425,21 @@ export const notifications = sqliteTable(
   ],
 );
 
-export const webhookEvents = sqliteTable("webhook_events", {
-  id: text("id").primaryKey(), // ULID
-  topic: text("topic").notNull(),
-  payload: text("payload").notNull(), // Raw JSON
-  processed: integer("processed", { mode: "boolean" }).notNull().default(false),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+export const webhookEvents = sqliteTable(
+  "webhook_events",
+  {
+    id: text("id").primaryKey(), // ULID
+    topic: text("topic").notNull(),
+    metaEventId: text("meta_event_id"), // For deduplication of Meta webhook events
+    payload: text("payload").notNull(), // Raw JSON
+    processed: integer("processed", { mode: "boolean" }).notNull().default(false),
+    receivedAt: integer("received_at", { mode: "timestamp" }), // When the event was received
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("webhook_events_meta_event_id_idx").on(table.metaEventId),
+  ],
+);
 
 // =============================================================================
 // Webhook & Notifications relations
@@ -536,3 +559,294 @@ export const rateLimits = sqliteTable(
 
 export type RateLimit = typeof rateLimits.$inferSelect;
 export type NewRateLimit = typeof rateLimits.$inferInsert;
+
+// =============================================================================
+// Publish Attempts table (media container state machine audit log)
+// =============================================================================
+
+export const publishAttempts = sqliteTable(
+  "publish_attempts",
+  {
+    id: text("id").primaryKey(), // ULID
+    postId: text("post_id")
+      .notNull()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    containerId: text("container_id"), // Threads API container ID (null until created)
+    status: text("status", {
+      enum: [
+        "creating",
+        "processing",
+        "polling",
+        "publishing",
+        "published",
+        "failed",
+        "expired",
+      ],
+    }).notNull(),
+    attemptNumber: integer("attempt_number").notNull().default(1),
+    errorMessage: text("error_message"),
+    startedAt: integer("started_at", { mode: "timestamp" }).notNull(),
+    completedAt: integer("completed_at", { mode: "timestamp" }),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  },
+  (table) => [
+    index("publish_attempts_post_id_idx").on(table.postId),
+    index("publish_attempts_status_idx").on(table.status),
+  ],
+);
+
+export const publishAttemptsRelations = relations(publishAttempts, ({ one }) => ({
+  post: one(posts, {
+    fields: [publishAttempts.postId],
+    references: [posts.id],
+  }),
+}));
+
+export type PublishAttempt = typeof publishAttempts.$inferSelect;
+export type NewPublishAttempt = typeof publishAttempts.$inferInsert;
+
+// =============================================================================
+// Profile API Usage table (rate gate tracking for Threads API limits)
+// =============================================================================
+
+export const profileApiUsage = sqliteTable(
+  "profile_api_usage",
+  {
+    id: text("id").primaryKey(), // ULID
+    threadsAccountId: text("threads_account_id")
+      .notNull()
+      .references(() => threadsAccounts.id, { onDelete: "cascade" }),
+    actionType: text("action_type", {
+      enum: ["post", "reply", "api_call"],
+    }).notNull(),
+    timestamp: integer("timestamp").notNull(), // Unix seconds when the action occurred
+    createdAt: integer("created_at").notNull(), // Unix seconds
+  },
+  (table) => [
+    index("profile_api_usage_account_action_idx").on(
+      table.threadsAccountId,
+      table.actionType,
+    ),
+    index("profile_api_usage_timestamp_idx").on(table.timestamp),
+  ],
+);
+
+export const profileApiUsageRelations = relations(profileApiUsage, ({ one }) => ({
+  account: one(threadsAccounts, {
+    fields: [profileApiUsage.threadsAccountId],
+    references: [threadsAccounts.id],
+  }),
+}));
+
+export type ProfileApiUsage = typeof profileApiUsage.$inferSelect;
+export type NewProfileApiUsage = typeof profileApiUsage.$inferInsert;
+
+// =============================================================================
+// Audit Events table
+// =============================================================================
+
+export const auditEvents = sqliteTable(
+  "audit_events",
+  {
+    id: text("id").primaryKey(), // ULID
+    actorId: text("actor_id"), // user ID or system identifier
+    actorType: text("actor_type", {
+      enum: ["user", "system", "webhook", "cron"],
+    }).notNull(),
+    action: text("action").notNull(), // e.g. 'post.create', 'data_deletion.request'
+    resourceType: text("resource_type", {
+      enum: ["post", "reply", "account", "template", "webhook_event"],
+    }),
+    resourceId: text("resource_id"),
+    beforeState: text("before_state"), // JSON nullable - previous state
+    afterState: text("after_state"), // JSON nullable - new state
+    metadata: text("metadata"), // JSON nullable - extra context
+    ipAddress: text("ip_address"),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  },
+  (table) => [
+    index("audit_events_action_idx").on(table.action),
+    index("audit_events_resource_idx").on(table.resourceType, table.resourceId),
+    index("audit_events_actor_id_idx").on(table.actorId),
+    index("audit_events_created_at_idx").on(table.createdAt),
+  ],
+);
+
+export type AuditEvent = typeof auditEvents.$inferSelect;
+export type NewAuditEvent = typeof auditEvents.$inferInsert;
+
+// =============================================================================
+// Data Deletions table (tracks Meta GDPR deletion requests)
+// =============================================================================
+
+export const dataDeletions = sqliteTable(
+  "data_deletions",
+  {
+    id: text("id").primaryKey(), // ULID
+    threadsUserId: text("threads_user_id").notNull(),
+    confirmationCode: text("confirmation_code").notNull().unique(),
+    status: text("status", {
+      enum: ["pending", "processing", "completed", "failed"],
+    })
+      .notNull()
+      .default("pending"),
+    tablesDeleted: text("tables_deleted"), // JSON array of table names processed
+    errorMessage: text("error_message"),
+    requestedAt: integer("requested_at", { mode: "timestamp" }).notNull(),
+    completedAt: integer("completed_at", { mode: "timestamp" }),
+  },
+  (table) => [
+    index("data_deletions_threads_user_id_idx").on(table.threadsUserId),
+    index("data_deletions_confirmation_code_idx").on(table.confirmationCode),
+  ],
+);
+
+export type DataDeletion = typeof dataDeletions.$inferSelect;
+export type NewDataDeletion = typeof dataDeletions.$inferInsert;
+
+// =============================================================================
+// Reply Approval Workflow tables
+// =============================================================================
+
+/**
+ * Inbox items represent incoming replies, mentions, and quotes received on
+ * Threads posts. They form the starting point of the approval workflow:
+ * receive -> classify -> AI draft -> approve -> send.
+ */
+export const inboxItems = sqliteTable(
+  "inbox_items",
+  {
+    id: text("id").primaryKey(), // ULID
+    threadsAccountId: text("threads_account_id")
+      .notNull()
+      .references(() => threadsAccounts.id, { onDelete: "cascade" }),
+    threadsPostId: text("threads_post_id").notNull(), // original post that received the reply
+    threadsReplyId: text("threads_reply_id").notNull(), // the incoming reply/mention media ID
+    replyUsername: text("reply_username").notNull(),
+    replyText: text("reply_text").notNull(),
+    replyMediaUrl: text("reply_media_url"), // nullable
+    replyTimestamp: integer("reply_timestamp").notNull(), // Unix seconds
+    itemType: text("item_type", {
+      enum: ["reply", "mention", "quote"],
+    }).notNull(),
+    status: text("status", {
+      enum: ["pending", "draft_ready", "approved", "sent", "ignored", "hidden"],
+    })
+      .notNull()
+      .default("pending"),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+  },
+  (table) => [
+    index("inbox_items_account_id_idx").on(table.threadsAccountId),
+    index("inbox_items_status_idx").on(table.status),
+    index("inbox_items_reply_timestamp_idx").on(table.replyTimestamp),
+    uniqueIndex("inbox_items_threads_reply_id_idx").on(table.threadsReplyId),
+  ],
+);
+
+/**
+ * Reply drafts are AI-generated or manually created response drafts for an
+ * inbox item. Multiple drafts can exist per inbox item (e.g. regenerated
+ * suggestions) but only one is ultimately approved.
+ */
+export const replyDrafts = sqliteTable(
+  "reply_drafts",
+  {
+    id: text("id").primaryKey(), // ULID
+    inboxItemId: text("inbox_item_id")
+      .notNull()
+      .references(() => inboxItems.id, { onDelete: "cascade" }),
+    content: text("content").notNull(),
+    generatedBy: text("generated_by", {
+      enum: ["ai", "manual"],
+    }).notNull(),
+    aiModel: text("ai_model"), // nullable - which model generated this
+    aiPrompt: text("ai_prompt"), // nullable - the prompt used
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  },
+  (table) => [
+    index("reply_drafts_inbox_item_id_idx").on(table.inboxItemId),
+  ],
+);
+
+/**
+ * Reply decisions record approval/rejection actions taken on inbox items.
+ * This provides a full audit trail of who approved/rejected/ignored each
+ * incoming reply, supporting the mandatory approval workflow.
+ */
+export const replyDecisions = sqliteTable(
+  "reply_decisions",
+  {
+    id: text("id").primaryKey(), // ULID
+    inboxItemId: text("inbox_item_id")
+      .notNull()
+      .references(() => inboxItems.id, { onDelete: "cascade" }),
+    replyDraftId: text("reply_draft_id").references(() => replyDrafts.id, {
+      onDelete: "set null",
+    }), // nullable - not required for ignore/hide decisions
+    decision: text("decision", {
+      enum: ["approve", "reject", "ignore", "hide", "edit_and_approve"],
+    }).notNull(),
+    decidedBy: text("decided_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    reason: text("reason"), // nullable - optional justification
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  },
+  (table) => [
+    index("reply_decisions_inbox_item_id_idx").on(table.inboxItemId),
+    index("reply_decisions_decided_by_idx").on(table.decidedBy),
+  ],
+);
+
+// =============================================================================
+// Reply Approval Workflow relations
+// =============================================================================
+
+export const inboxItemsRelations = relations(inboxItems, ({ one, many }) => ({
+  account: one(threadsAccounts, {
+    fields: [inboxItems.threadsAccountId],
+    references: [threadsAccounts.id],
+  }),
+  drafts: many(replyDrafts),
+  decisions: many(replyDecisions),
+}));
+
+export const replyDraftsRelations = relations(replyDrafts, ({ one }) => ({
+  inboxItem: one(inboxItems, {
+    fields: [replyDrafts.inboxItemId],
+    references: [inboxItems.id],
+  }),
+  createdByUser: one(users, {
+    fields: [replyDrafts.createdBy],
+    references: [users.id],
+  }),
+}));
+
+export const replyDecisionsRelations = relations(replyDecisions, ({ one }) => ({
+  inboxItem: one(inboxItems, {
+    fields: [replyDecisions.inboxItemId],
+    references: [inboxItems.id],
+  }),
+  draft: one(replyDrafts, {
+    fields: [replyDecisions.replyDraftId],
+    references: [replyDrafts.id],
+  }),
+  decidedByUser: one(users, {
+    fields: [replyDecisions.decidedBy],
+    references: [users.id],
+  }),
+}));
+
+export type InboxItem = typeof inboxItems.$inferSelect;
+export type NewInboxItem = typeof inboxItems.$inferInsert;
+
+export type ReplyDraft = typeof replyDrafts.$inferSelect;
+export type NewReplyDraft = typeof replyDrafts.$inferInsert;
+
+export type ReplyDecision = typeof replyDecisions.$inferSelect;
+export type NewReplyDecision = typeof replyDecisions.$inferInsert;

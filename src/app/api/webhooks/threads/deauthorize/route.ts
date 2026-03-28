@@ -5,15 +5,19 @@
 
 import { NextRequest } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { eq } from "drizzle-orm";
+import { createDb } from "@/db";
+import { threadsAccounts } from "@/db/schema";
 import { verifySignedRequest } from "@/lib/threads/verify-signature";
+import { logAuditEvent } from "@/lib/audit/logger";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.text();
-    console.log("[Threads Deauthorize] Received:", body);
+    console.log("[Threads Deauthorize] Received request");
 
     const { env } = await getCloudflareContext({ async: true });
-    const db = env.DB;
+    const db = createDb(env.DB);
 
     // Parse the signed_request from Meta
     const params = new URLSearchParams(body);
@@ -36,13 +40,27 @@ export async function POST(request: NextRequest) {
 
     const threadsUserId = decoded.user_id;
 
-    if (threadsUserId && db) {
+    if (threadsUserId) {
+      const threadsUserIdStr = String(threadsUserId);
+
       // Remove the user's Threads account data
       await db
-        .prepare("DELETE FROM threads_accounts WHERE threads_user_id = ?")
-        .bind(String(threadsUserId))
-        .run();
-      console.log("[Threads Deauthorize] Removed account for user:", threadsUserId);
+        .delete(threadsAccounts)
+        .where(eq(threadsAccounts.threadsUserId, threadsUserIdStr));
+
+      // Audit log the disconnection
+      await logAuditEvent(db, {
+        actorType: "system",
+        action: "account.disconnect",
+        resourceType: "account",
+        resourceId: threadsUserIdStr,
+        metadata: { reason: "deauthorized_by_user" },
+      });
+
+      console.log(
+        "[Threads Deauthorize] Removed account for user:",
+        threadsUserIdStr,
+      );
     }
   } catch (err) {
     console.error("[Threads Deauthorize] Error:", err);

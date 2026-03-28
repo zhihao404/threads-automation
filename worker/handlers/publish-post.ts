@@ -11,6 +11,13 @@ import { posts, threadsAccounts } from "../../src/db/schema";
 import { decryptTokenWithKey } from "../crypto";
 import { ThreadsClient } from "../threads-client";
 import { getMediaType } from "../utils";
+import {
+  canPublish,
+  canReply,
+  recordPublish,
+  recordReply,
+  recordApiCall,
+} from "../../src/lib/threads/rate-gate";
 
 /** Maximum number of publish attempts before marking a post as failed */
 const MAX_RETRIES = 3;
@@ -105,11 +112,34 @@ export async function handlePublishPost(
     return;
   }
 
-  // 3. Create ThreadsClient
+  // 3. Check Threads profile-level rate limits before publishing
+  const isReply = !!post.replyToId;
+  const quota = isReply
+    ? await canReply(db, message.accountId)
+    : await canPublish(db, message.accountId);
+
+  if (!quota.allowed) {
+    const kind = isReply ? "Reply" : "Post";
+    const errorMsg = `${kind} rate limit exceeded (${quota.used}/${quota.limit} in 24h window)`;
+    console.warn(`Post ${message.postId}: ${errorMsg}`);
+
+    // Don't retry rate-limit failures immediately -- mark as failed
+    await db
+      .update(posts)
+      .set({
+        status: "failed",
+        errorMessage: errorMsg,
+        updatedAt: now,
+      })
+      .where(eq(posts.id, message.postId));
+    return;
+  }
+
+  // 4. Create ThreadsClient
   const client = new ThreadsClient(accessToken, account.threadsUserId);
 
   try {
-    // 4. Based on mediaType, call appropriate create method
+    // 5. Based on mediaType, call appropriate create method
     let containerId: string;
     const mediaUrls: string[] = post.mediaUrls ? JSON.parse(post.mediaUrls) : [];
 
@@ -191,6 +221,14 @@ export async function handlePublishPost(
         updatedAt: now,
       })
       .where(eq(posts.id, message.postId));
+
+    // Record Threads profile-level usage for rate gate tracking
+    if (isReply) {
+      await recordReply(db, message.accountId);
+    } else {
+      await recordPublish(db, message.accountId);
+    }
+    await recordApiCall(db, message.accountId);
 
     console.log(`Post ${message.postId} published successfully as ${publishResult.id}`);
   } catch (error) {

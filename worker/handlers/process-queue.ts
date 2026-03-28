@@ -11,6 +11,13 @@ import { posts, postQueue, threadsAccounts } from "../../src/db/schema";
 import { decryptTokenWithKey } from "../crypto";
 import { ThreadsClient } from "../threads-client";
 import { getMediaType } from "../utils";
+import {
+  canPublish,
+  canReply,
+  recordPublish,
+  recordReply,
+  recordApiCall,
+} from "../../src/lib/threads/rate-gate";
 
 /**
  * Processes the next post in the queue for a given account.
@@ -95,7 +102,37 @@ export async function handleProcessQueue(
     return;
   }
 
-  // 3. Publish it
+  // 3. Check Threads profile-level rate limits before publishing
+  const isReply = !!post.replyToId;
+  const quota = isReply
+    ? await canReply(db, message.accountId)
+    : await canPublish(db, message.accountId);
+
+  if (!quota.allowed) {
+    const kind = isReply ? "Reply" : "Post";
+    const errorMsg = `${kind} rate limit exceeded (${quota.used}/${quota.limit} in 24h window)`;
+    console.warn(`Queue item ${queueItem.id}: ${errorMsg}`);
+
+    await db.batch([
+      db
+        .update(posts)
+        .set({ status: "failed", errorMessage: errorMsg, updatedAt: now })
+        .where(eq(posts.id, queueItem.postId)),
+      db.delete(postQueue).where(eq(postQueue.id, queueItem.id)),
+      db
+        .update(postQueue)
+        .set({ position: sql`${postQueue.position} - 1` })
+        .where(
+          and(
+            eq(postQueue.accountId, message.accountId),
+            sql`${postQueue.position} > ${queueItem.position}`,
+          ),
+        ),
+    ]);
+    return;
+  }
+
+  // 4. Publish it
   const client = new ThreadsClient(accessToken, account.threadsUserId);
 
   try {
@@ -197,6 +234,14 @@ export async function handleProcessQueue(
           ),
         ),
     ]);
+
+    // Record Threads profile-level usage for rate gate tracking
+    if (isReply) {
+      await recordReply(db, message.accountId);
+    } else {
+      await recordPublish(db, message.accountId);
+    }
+    await recordApiCall(db, message.accountId);
 
     console.log(
       `Queue item ${queueItem.id} processed: post ${queueItem.postId} published as ${publishResult.id}`,
