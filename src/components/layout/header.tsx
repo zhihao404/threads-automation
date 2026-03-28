@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { NotificationBell } from "@/components/notifications/notification-bell";
+import { getPageTitle } from "@/lib/navigation";
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -24,20 +25,6 @@ interface AccountInfo {
   displayName: string | null;
   profilePictureUrl: string | null;
 }
-
-const pageTitles: Record<string, string> = {
-  "/dashboard": "Dashboard",
-  "/posts": "Posts",
-  "/posts/new": "New Post",
-  "/posts/schedule": "Schedule",
-  "/posts/templates": "Templates",
-  "/ai/generate": "AI Generate",
-  "/dashboard/analytics": "Analytics",
-  "/replies": "Replies",
-  "/accounts": "Accounts",
-  "/settings": "Settings",
-  "/notifications": "Notifications",
-};
 
 export function Header({ onMenuClick }: HeaderProps) {
   const pathname = usePathname();
@@ -72,14 +59,7 @@ export function Header({ onMenuClick }: HeaderProps) {
     ? primaryAccount.username.slice(0, 2).toUpperCase()
     : "--";
 
-  const pageTitle =
-    pageTitles[pathname] ||
-    pathname
-      .split("/")
-      .pop()
-      ?.replace(/-/g, " ")
-      ?.replace(/\b\w/g, (l) => l.toUpperCase()) ||
-    "Dashboard";
+  const pageTitle = getPageTitle(pathname);
 
   return (
     <header className="flex h-14 items-center gap-4 border-b bg-background px-4 md:px-6">

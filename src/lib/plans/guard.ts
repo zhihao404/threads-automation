@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { checkLimit, getUserPlan } from "./limits";
-import { PLANS, type PlanType } from "@/lib/stripe/config";
+import { PLANS } from "@/lib/stripe/config";
 import type { Database } from "@/db";
 
 /**
@@ -106,13 +106,4 @@ export async function guardFeatureAccess(
   }
 
   return null;
-}
-
-/**
- * Get the next plan that would unlock a feature or increase a limit.
- */
-export function getSuggestedUpgradePlan(currentPlan: PlanType): PlanType | null {
-  if (currentPlan === "free") return "pro";
-  if (currentPlan === "pro") return "business";
-  return null; // Already on highest plan
 }

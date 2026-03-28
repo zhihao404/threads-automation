@@ -4,43 +4,38 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthorizationUrl } from "@/lib/threads/oauth";
-import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { createDb } from "@/db";
-import { session } from "@/db/schema";
-import { eq, and, sql } from "drizzle-orm";
 import { guardPlanLimit } from "@/lib/plans/guard";
-
-export const runtime = "edge";
+import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+import { getCfEnv } from "@/lib/cloudflare";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const { env } = await getCloudflareContext({ async: true });
+  const cfEnv = await getCfEnv();
 
-  const clientId = env.THREADS_APP_ID;
-  const appUrl = env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
+  const clientId = cfEnv?.THREADS_APP_ID ?? process.env.THREADS_APP_ID;
+  const appUrl =
+    cfEnv?.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_APP_URL;
+
+  if (!appUrl) {
+    console.error("[Threads OAuth] NEXT_PUBLIC_APP_URL is not set");
+    return NextResponse.json(
+      { error: "NEXT_PUBLIC_APP_URL must be configured" },
+      { status: 500 },
+    );
+  }
 
   if (!clientId) {
+    console.error("[Threads OAuth] THREADS_APP_ID is not set in .dev.vars or .env");
     return NextResponse.redirect(
       `${appUrl}/accounts?error=${encodeURIComponent("Threads APIの設定が完了していません。管理者にお問い合わせください。")}`,
     );
   }
 
   // Check authentication and account limit before starting OAuth
-  const sessionToken = request.cookies.get("better-auth.session_token")?.value;
-  if (sessionToken) {
-    const db = createDb(env.DB);
-    const sessions = await db
-      .select({ userId: session.userId })
-      .from(session)
-      .where(
-        and(
-          eq(session.token, sessionToken),
-          sql`${session.expiresAt} > ${Math.floor(Date.now() / 1000)}`,
-        ),
-      )
-      .limit(1);
-
-    const userId = sessions[0]?.userId;
+  if (cfEnv?.DB) {
+    const userId = await getAuthenticatedUserId();
     if (userId) {
+      const db = createDb(cfEnv.DB);
       const limitResponse = await guardPlanLimit(db, userId, "account");
       if (limitResponse) {
         return NextResponse.redirect(
@@ -70,10 +65,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   response.cookies.set("threads_oauth_state", state, {
     httpOnly: true,
-    secure: appUrl.startsWith("https"),
+    secure: true,
     sameSite: "lax",
     path: "/",
-    maxAge: 600, // 10 minutes
+    maxAge: 300, // 5 minutes
   });
 
   return response;

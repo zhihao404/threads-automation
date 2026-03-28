@@ -1,88 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import {
-  LayoutDashboard,
-  PenSquare,
-  Plus,
-  Calendar,
-  FileText,
   Sparkles,
-  BarChart3,
-  Activity,
-  Bell,
-  FileBarChart,
-  MessageCircle,
-  Users,
-  UserPlus,
-  Settings,
   X,
   LogOut,
-  Brain,
-  CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-
-interface NavItem {
-  title: string;
-  href: string;
-  icon: React.ComponentType<{ className?: string }>;
-}
-
-interface NavSection {
-  label: string;
-  items: NavItem[];
-}
-
-const navSections: NavSection[] = [
-  {
-    label: "Main",
-    items: [
-      { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-    ],
-  },
-  {
-    label: "Content",
-    items: [
-      { title: "Posts", href: "/posts", icon: PenSquare },
-      { title: "New Post", href: "/posts/new", icon: Plus },
-      { title: "Schedule", href: "/posts/schedule", icon: Calendar },
-      { title: "Templates", href: "/posts/templates", icon: FileText },
-    ],
-  },
-  {
-    label: "AI",
-    items: [
-      { title: "AI Generate", href: "/ai/generate", icon: Sparkles },
-      { title: "AI Insights", href: "/ai/insights", icon: Brain },
-      { title: "Content Calendar", href: "/ai/calendar", icon: CalendarDays },
-    ],
-  },
-  {
-    label: "Insights",
-    items: [
-      { title: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
-      { title: "Engagement", href: "/dashboard/engagement", icon: Activity },
-      { title: "Followers", href: "/dashboard/followers", icon: UserPlus },
-      { title: "Replies", href: "/replies", icon: MessageCircle },
-      { title: "Reports", href: "/reports", icon: FileBarChart },
-    ],
-  },
-  {
-    label: "Settings",
-    items: [
-      { title: "Notifications", href: "/notifications", icon: Bell },
-      { title: "Accounts", href: "/accounts", icon: Users },
-      { title: "Settings", href: "/settings", icon: Settings },
-    ],
-  },
-];
+import { signOut, useSession } from "@/lib/auth-client";
+import { dashboardNavSections } from "@/lib/navigation";
 
 interface MobileNavProps {
   open: boolean;
@@ -91,6 +23,13 @@ interface MobileNavProps {
 
 export function MobileNav({ open, onClose }: MobileNavProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { data: session } = useSession();
+
+  const userName = session?.user?.name || "User";
+  const userEmail = session?.user?.email || "";
+  const userImage = session?.user?.image || "";
+  const userInitial = userName.charAt(0).toUpperCase();
 
   // Close on navigation
   useEffect(() => {
@@ -147,7 +86,7 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
         {/* Navigation */}
         <ScrollArea className="h-[calc(100vh-8rem)]">
           <nav className="flex flex-col gap-1 p-2">
-            {navSections.map((section, sectionIndex) => (
+            {dashboardNavSections.map((section, sectionIndex) => (
               <div key={section.label}>
                 {sectionIndex > 0 && <Separator className="my-2" />}
                 <p className="mb-1 px-3 pt-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -184,19 +123,20 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
         <div className="absolute bottom-0 left-0 right-0 border-t border-sidebar-border p-3">
           <div className="flex items-center gap-3">
             <Avatar className="h-8 w-8">
-              <AvatarImage src="" alt="User" />
-              <AvatarFallback className="text-xs">U</AvatarFallback>
+              <AvatarImage src={userImage} alt={userName} />
+              <AvatarFallback className="text-xs">{userInitial}</AvatarFallback>
             </Avatar>
             <div className="flex-1 text-left">
-              <p className="text-sm font-medium">User</p>
-              <p className="text-xs text-muted-foreground">user@example.com</p>
+              <p className="text-sm font-medium">{userName}</p>
+              <p className="text-xs text-muted-foreground">{userEmail}</p>
             </div>
             <Button
               variant="ghost"
               size="icon"
               className="h-8 w-8 text-sidebar-foreground/70 hover:text-destructive"
-              onClick={() => {
-                // signOut() will be called here when auth is wired up
+              onClick={async () => {
+                await signOut();
+                router.push("/login");
               }}
             >
               <LogOut className="h-4 w-4" />

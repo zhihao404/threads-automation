@@ -23,10 +23,10 @@ export type ContainerPublishingStatus =
 export interface ThreadsProfile {
   id: string;
   username: string;
-  name: string;
-  threads_profile_picture_url: string;
-  threads_biography: string;
-  is_verified: boolean;
+  name?: string;
+  threads_profile_picture_url?: string;
+  threads_biography?: string;
+  is_verified?: boolean;
 }
 
 // =============================================================================

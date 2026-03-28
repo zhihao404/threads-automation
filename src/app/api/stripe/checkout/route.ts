@@ -1,44 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { cookies } from "next/headers";
-import { and, eq, sql } from "drizzle-orm";
 import { createDb } from "@/db";
-import { session, users } from "@/db/schema";
 import { createStripeClient, getPlansWithPriceIds } from "@/lib/stripe/config";
 import {
   getOrCreateCustomer,
   createCheckoutSession,
 } from "@/lib/stripe/subscription";
-
-async function getAuthenticatedUser() {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("better-auth.session_token")?.value;
-  if (!sessionToken) return null;
-
-  const { env } = await getCloudflareContext({ async: true });
-  const db = createDb(env.DB);
-
-  const rows = await db
-    .select({ userId: session.userId })
-    .from(session)
-    .where(
-      and(
-        eq(session.token, sessionToken),
-        sql`${session.expiresAt} > ${Math.floor(Date.now() / 1000)}`,
-      ),
-    )
-    .limit(1);
-
-  if (!rows[0]) return null;
-
-  const userRows = await db
-    .select({ id: users.id, email: users.email })
-    .from(users)
-    .where(eq(users.id, rows[0].userId))
-    .limit(1);
-
-  return userRows[0] ?? null;
-}
+import { getAuthenticatedUser } from "@/lib/auth-helpers";
 
 export async function POST(request: NextRequest) {
   try {

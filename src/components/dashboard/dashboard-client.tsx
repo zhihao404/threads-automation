@@ -33,55 +33,11 @@ import { KpiCard } from "@/components/dashboard/kpi-card";
 import { EngagementChart } from "@/components/dashboard/engagement-chart";
 import { PostStatusChart } from "@/components/dashboard/post-status-chart";
 import { RecentPostsList } from "@/components/dashboard/recent-posts-list";
+import type { DashboardData } from "@/lib/dashboard/service";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface AccountInfo {
-  id: string;
-  username: string;
-  displayName: string | null;
-  profilePictureUrl: string | null;
-}
-
-interface KpiMetric {
-  current: number;
-  previous: number;
-  change: number;
-}
-
-export interface DashboardData {
-  accounts: AccountInfo[];
-  kpi: {
-    views: KpiMetric;
-    likes: KpiMetric;
-    replies: KpiMetric;
-    followers: { current: number; change: number };
-  };
-  recentPosts: Array<{
-    id: string;
-    content: string;
-    status: string;
-    mediaType: string;
-    publishedAt: string | null;
-    createdAt: string;
-    metrics: { views: number; likes: number; replies: number } | null;
-  }>;
-  dailyMetrics: Array<{
-    date: string;
-    views: number;
-    likes: number;
-    replies: number;
-    reposts: number;
-  }>;
-  postsByStatus: {
-    published: number;
-    scheduled: number;
-    draft: number;
-    failed: number;
-  };
-}
 
 type Period = "7d" | "14d" | "30d" | "90d";
 

@@ -47,4 +47,4 @@ binding = "POST_QUEUE"
 # STRIPE_BUSINESS_PRICE_ID - Stripe Price ID for the Business plan (price_...)
 
 [vars]
-NEXT_PUBLIC_APP_URL = "http://localhost:3000"
+NEXT_PUBLIC_APP_URL = "https://localhost:3000"

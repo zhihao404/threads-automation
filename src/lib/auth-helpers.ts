@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { createDb } from "@/db";
 import type { Database } from "@/db";
-import { session, threadsAccounts } from "@/db/schema";
+import { session, threadsAccounts, users } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 
@@ -34,6 +34,29 @@ export async function getAuthenticatedUserId(): Promise<string | null> {
     .limit(1);
 
   return sessions[0]?.userId ?? null;
+}
+
+/**
+ * Authenticate and return userId + email. Used by stripe/checkout etc.
+ * Returns null when unauthenticated or user not found.
+ */
+export async function getAuthenticatedUser(): Promise<{
+  id: string;
+  email: string;
+} | null> {
+  const userId = await getAuthenticatedUserId();
+  if (!userId) return null;
+
+  const { env } = await getCloudflareContext({ async: true });
+  const db = createDb(env.DB);
+
+  const userRows = await db
+    .select({ id: users.id, email: users.email })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  return userRows[0] ?? null;
 }
 
 /**

@@ -5,27 +5,12 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useSession, signOut } from "@/lib/auth-client";
 import {
-  LayoutDashboard,
-  PenSquare,
-  Plus,
-  Calendar,
-  FileText,
   Sparkles,
-  BarChart3,
-  Activity,
-  Bell,
-  FileBarChart,
-  MessageCircle,
-  Users,
-  UserPlus,
   Settings,
   ChevronsLeft,
   ChevronsRight,
   LogOut,
   ChevronDown,
-  Repeat,
-  Brain,
-  CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -44,62 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-
-interface NavItem {
-  title: string;
-  href: string;
-  icon: React.ComponentType<{ className?: string }>;
-}
-
-interface NavSection {
-  label: string;
-  items: NavItem[];
-}
-
-const navSections: NavSection[] = [
-  {
-    label: "Main",
-    items: [
-      { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-    ],
-  },
-  {
-    label: "Content",
-    items: [
-      { title: "Posts", href: "/posts", icon: PenSquare },
-      { title: "New Post", href: "/posts/new", icon: Plus },
-      { title: "Schedule", href: "/posts/schedule", icon: Calendar },
-      { title: "Recurring", href: "/posts/recurring", icon: Repeat },
-      { title: "Templates", href: "/posts/templates", icon: FileText },
-    ],
-  },
-  {
-    label: "AI",
-    items: [
-      { title: "AI Generate", href: "/ai/generate", icon: Sparkles },
-      { title: "AI Insights", href: "/ai/insights", icon: Brain },
-      { title: "Content Calendar", href: "/ai/calendar", icon: CalendarDays },
-    ],
-  },
-  {
-    label: "Insights",
-    items: [
-      { title: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
-      { title: "Engagement", href: "/dashboard/engagement", icon: Activity },
-      { title: "Followers", href: "/dashboard/followers", icon: UserPlus },
-      { title: "Replies", href: "/replies", icon: MessageCircle },
-      { title: "Reports", href: "/reports", icon: FileBarChart },
-    ],
-  },
-  {
-    label: "Settings",
-    items: [
-      { title: "Notifications", href: "/notifications", icon: Bell },
-      { title: "Accounts", href: "/accounts", icon: Users },
-      { title: "Settings", href: "/settings", icon: Settings },
-    ],
-  },
-];
+import { dashboardNavSections } from "@/lib/navigation";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -144,7 +74,7 @@ export function Sidebar() {
       {/* Navigation */}
       <ScrollArea className="flex-1 py-2">
         <nav className="flex flex-col gap-1 px-2">
-          {navSections.map((section, sectionIndex) => (
+          {dashboardNavSections.map((section, sectionIndex) => (
             <div key={section.label}>
               {sectionIndex > 0 && <Separator className="my-2" />}
               {!collapsed && (

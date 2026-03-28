@@ -557,12 +557,21 @@ export class ThreadsClient {
     // Add access token to all requests
     url.searchParams.set("access_token", this.accessToken);
 
-    const response = await fetch(url.toString(), {
-      ...options,
-      headers: {
-        ...options?.headers,
-      },
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
+    let response: Response;
+    try {
+      response = await fetch(url.toString(), {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          ...options?.headers,
+        },
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       let errorBody: ThreadsApiErrorResponse;

@@ -112,36 +112,3 @@ export async function getLongLivedToken(params: {
     expiresIn: data.expires_in,
   };
 }
-
-/**
- * Refreshes a valid, non-expired long-lived token.
- * The new token is valid for 60 days from the time of refresh.
- *
- * Tokens can only be refreshed if they are at least 24 hours old.
- * Expired tokens cannot be refreshed.
- */
-export async function refreshLongLivedToken(params: {
-  accessToken: string;
-}): Promise<{ accessToken: string; expiresIn: number }> {
-  const url = new URL(THREADS_LONG_LIVED_TOKEN_URL);
-  url.searchParams.set("grant_type", "th_refresh_token");
-  url.searchParams.set("access_token", params.accessToken);
-
-  const response = await fetch(url.toString(), {
-    method: "GET",
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Failed to refresh long-lived token: ${response.status} ${errorText}`,
-    );
-  }
-
-  const data = (await response.json()) as LongLivedTokenResponse;
-
-  return {
-    accessToken: data.access_token,
-    expiresIn: data.expires_in,
-  };
-}

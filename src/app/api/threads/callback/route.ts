@@ -3,23 +3,24 @@
 // =============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
-import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { cookies } from "next/headers";
 import { exchangeCodeForToken, getLongLivedToken } from "@/lib/threads/oauth";
 import { ThreadsClient } from "@/lib/threads/client";
 import { encryptToken } from "@/lib/threads/encryption";
+import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+import { getCfEnv } from "@/lib/cloudflare";
 import { ulid } from "ulid";
 
-export const runtime = "edge";
-
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const { env } = await getCloudflareContext({ async: true });
+  const cfEnv = await getCfEnv();
   const { searchParams } = request.nextUrl;
 
-  const appUrl = env.NEXT_PUBLIC_APP_URL;
+  const appUrl =
+    cfEnv?.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_APP_URL;
+
   if (!appUrl) {
+    console.error("[Threads Callback] NEXT_PUBLIC_APP_URL is not set");
     return NextResponse.json(
-      { error: "NEXT_PUBLIC_APP_URL is not configured" },
+      { error: "NEXT_PUBLIC_APP_URL must be configured" },
       { status: 500 },
     );
   }
@@ -57,12 +58,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // ---------------------------------------------------------------------------
   // 2. Validate required environment variables
   // ---------------------------------------------------------------------------
-  const clientId = env.THREADS_APP_ID;
-  const clientSecret = env.THREADS_APP_SECRET;
-  const encryptionKey = env.ENCRYPTION_KEY;
+  const clientId = cfEnv?.THREADS_APP_ID ?? process.env.THREADS_APP_ID;
+  const clientSecret = cfEnv?.THREADS_APP_SECRET ?? process.env.THREADS_APP_SECRET;
+  const encryptionKey = cfEnv?.ENCRYPTION_KEY ?? process.env.ENCRYPTION_KEY;
+  const d1 = cfEnv?.DB;
 
-  if (!clientId || !clientSecret || !encryptionKey) {
-    console.error("Missing required environment variables for Threads OAuth");
+  if (!clientId || !clientSecret || !encryptionKey || !d1) {
+    console.error("[Threads Callback] Missing required config:", {
+      hasClientId: !!clientId,
+      hasClientSecret: !!clientSecret,
+      hasEncryptionKey: !!encryptionKey,
+      hasDb: !!d1,
+    });
     return NextResponse.redirect(
       `${appUrl}/accounts?error=${encodeURIComponent("Server configuration error. Please contact support.")}`,
     );
@@ -72,36 +79,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   try {
     // -------------------------------------------------------------------------
-    // 3. Validate session (authenticate user BEFORE exchanging tokens)
+    // 3. Validate session via centralized auth helper
     // -------------------------------------------------------------------------
-    const db = env.DB;
-    if (!db) {
-      throw new Error("D1 database binding (DB) is not configured");
-    }
+    const appUserId = await getAuthenticatedUserId();
 
-    const cookieStore = await cookies();
-    const sessionToken = cookieStore.get("better-auth.session_token")?.value;
-
-    if (!sessionToken) {
+    if (!appUserId) {
       return NextResponse.redirect(
-        `${appUrl}/accounts?error=${encodeURIComponent("You must be logged in to connect a Threads account.")}`,
+        `${appUrl}/accounts?error=${encodeURIComponent("セッションが無効です。再ログインしてください。")}`,
       );
     }
-
-    const sessionRow = await db
-      .prepare(
-        "SELECT user_id FROM session WHERE token = ? AND expires_at > ?",
-      )
-      .bind(sessionToken, Math.floor(Date.now() / 1000))
-      .first<{ user_id: string }>();
-
-    if (!sessionRow) {
-      return NextResponse.redirect(
-        `${appUrl}/accounts?error=${encodeURIComponent("Your session has expired. Please log in again.")}`,
-      );
-    }
-
-    const appUserId = sessionRow.user_id;
 
     // -------------------------------------------------------------------------
     // 4. Exchange code for short-lived token
@@ -128,16 +114,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // -------------------------------------------------------------------------
     const client = new ThreadsClient(longLivedToken);
     const profile = await client.getProfile();
+    const displayName = profile.name ?? null;
+    const profilePicUrl = profile.threads_profile_picture_url ?? null;
+    const biography = profile.threads_biography ?? null;
+    const isVerified = profile.is_verified ? 1 : 0;
 
     // -------------------------------------------------------------------------
     // 7. Encrypt and save token to D1 database
     // -------------------------------------------------------------------------
     const encryptedToken = await encryptToken(longLivedToken, encryptionKey);
-    const now = Math.floor(Date.now() / 1000);
-    const tokenExpiresAt = now + expiresIn;
+    const nowTs = Math.floor(Date.now() / 1000);
+    const tokenExpiresAt = nowTs + expiresIn;
 
     // Check if this Threads account is already connected
-    const existing = await db
+    const existing = await d1
       .prepare(
         "SELECT id, user_id FROM threads_accounts WHERE threads_user_id = ?",
       )
@@ -145,15 +135,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       .first<{ id: string; user_id: string }>();
 
     if (existing) {
-      // Prevent User B from overwriting User A's token
       if (existing.user_id !== appUserId) {
         return NextResponse.redirect(
-          `${appUrl}/accounts?error=${encodeURIComponent("This Threads account is already connected to another user.")}`,
+          `${appUrl}/accounts?error=${encodeURIComponent("このThreadsアカウントは別のユーザーに接続されています。")}`,
         );
       }
 
-      // Update existing account with new token and profile data
-      await db
+      await d1
         .prepare(
           `UPDATE threads_accounts
            SET access_token = ?,
@@ -170,18 +158,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           encryptedToken,
           tokenExpiresAt,
           profile.username,
-          profile.name,
-          profile.threads_profile_picture_url,
-          profile.threads_biography,
-          profile.is_verified ? 1 : 0,
-          now,
+          displayName,
+          profilePicUrl,
+          biography,
+          isVerified,
+          nowTs,
           existing.id,
         )
         .run();
     } else {
       const accountId = ulid();
 
-      await db
+      await d1
         .prepare(
           `INSERT INTO threads_accounts
            (id, user_id, threads_user_id, username, display_name, access_token, token_expires_at, profile_picture_url, biography, is_verified, created_at, updated_at)
@@ -192,45 +180,44 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           appUserId,
           threadsUserId,
           profile.username,
-          profile.name,
+          displayName,
           encryptedToken,
           tokenExpiresAt,
-          profile.threads_profile_picture_url,
-          profile.threads_biography,
-          profile.is_verified ? 1 : 0,
-          now,
-          now,
+          profilePicUrl,
+          biography,
+          isVerified,
+          nowTs,
+          nowTs,
         )
         .run();
     }
 
     // -------------------------------------------------------------------------
-    // 7. Clear the state cookie and redirect to accounts page
+    // 8. Clear the state cookie and redirect to accounts page
     // -------------------------------------------------------------------------
     const successResponse = NextResponse.redirect(
-      `${appUrl}/accounts?success=${encodeURIComponent(`Successfully connected @${profile.username}`)}`,
+      `${appUrl}/accounts?success=${encodeURIComponent(`@${profile.username} を接続しました`)}`,
     );
 
     successResponse.cookies.set("threads_oauth_state", "", {
       httpOnly: true,
-      secure: appUrl.startsWith("https"),
+      secure: true,
       sameSite: "lax",
       path: "/",
-      maxAge: 0, // Delete the cookie
+      maxAge: 0,
     });
 
     return successResponse;
   } catch (err) {
-    console.error("Threads OAuth callback error:", err);
+    console.error("[Threads Callback] Error:", err);
 
-    // Clear state cookie on error too
     const errorResponse = NextResponse.redirect(
       `${appUrl}/accounts?error=${encodeURIComponent("接続に失敗しました")}`,
     );
 
     errorResponse.cookies.set("threads_oauth_state", "", {
       httpOnly: true,
-      secure: appUrl.startsWith("https"),
+      secure: true,
       sameSite: "lax",
       path: "/",
       maxAge: 0,
