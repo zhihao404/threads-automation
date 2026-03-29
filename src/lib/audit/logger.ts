@@ -84,7 +84,7 @@ const PII_FIELDS = new Set([
  * Recursively strip sensitive fields from an object for audit logging.
  * Tokens, secrets, and PII are replaced with "[REDACTED]".
  */
-export function sanitizeForAudit(
+function sanitizeForAudit(
   obj: unknown,
   depth = 0,
 ): unknown {

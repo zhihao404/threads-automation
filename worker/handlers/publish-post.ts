@@ -10,7 +10,7 @@ import { createWorkerDb } from "../db";
 import { posts, threadsAccounts } from "../../src/db/schema";
 import { decryptTokenWithKey } from "../crypto";
 import { ThreadsClient } from "../threads-client";
-import { getMediaType } from "../utils";
+import { createMediaContainer, publishAndGetPermalink } from "../publish-helpers";
 import {
   canPublish,
   canReply,
@@ -139,82 +139,16 @@ export async function handlePublishPost(
   const client = new ThreadsClient(accessToken, account.threadsUserId);
 
   try {
-    // 5. Based on mediaType, call appropriate create method
-    let containerId: string;
-    const mediaUrls: string[] = post.mediaUrls ? JSON.parse(post.mediaUrls) : [];
+    // 5. Create media container and publish
+    const containerId = await createMediaContainer(client, post);
+    const { id: publishedId, permalink } = await publishAndGetPermalink(client, containerId);
 
-    switch (post.mediaType) {
-      case "TEXT":
-        containerId = await client.createTextPost({
-          text: post.content,
-          replyControl: post.replyControl as "everyone" | "accounts_you_follow" | "mentioned_only",
-          topicTag: post.topicTag ?? undefined,
-        });
-        break;
-
-      case "IMAGE":
-        if (!mediaUrls[0]) {
-          throw new Error("Image post requires at least one media URL");
-        }
-        containerId = await client.createImagePost({
-          text: post.content,
-          imageUrl: mediaUrls[0],
-          replyControl: post.replyControl as "everyone" | "accounts_you_follow" | "mentioned_only",
-          topicTag: post.topicTag ?? undefined,
-        });
-        break;
-
-      case "VIDEO":
-        if (!mediaUrls[0]) {
-          throw new Error("Video post requires at least one media URL");
-        }
-        containerId = await client.createVideoPost({
-          text: post.content,
-          videoUrl: mediaUrls[0],
-          replyControl: post.replyControl as "everyone" | "accounts_you_follow" | "mentioned_only",
-          topicTag: post.topicTag ?? undefined,
-        });
-        // 5. Wait for video container to be ready
-        await client.waitForContainerReady(containerId);
-        break;
-
-      case "CAROUSEL":
-        if (!mediaUrls || mediaUrls.length < 2) {
-          throw new Error("Carousel post requires at least 2 media URLs");
-        }
-        containerId = await client.createCarouselPost({
-          text: post.content,
-          children: mediaUrls.map((url) => ({
-            mediaType: getMediaType(url),
-            url,
-          })),
-          replyControl: post.replyControl as "everyone" | "accounts_you_follow" | "mentioned_only",
-          topicTag: post.topicTag ?? undefined,
-        });
-        break;
-
-      default:
-        throw new Error(`Unsupported media type: ${post.mediaType}`);
-    }
-
-    // 6. Publish the container
-    const publishResult = await client.publishPost(containerId);
-
-    // 7. Get permalink
-    let permalink: string | null = null;
-    try {
-      const threadPost = await client.getPost(publishResult.id);
-      permalink = threadPost.permalink ?? null;
-    } catch {
-      // Permalink fetch is non-critical
-    }
-
-    // 8. Update post status to "published"
+    // 6. Update post status to "published"
     await db
       .update(posts)
       .set({
         status: "published",
-        threadsMediaId: publishResult.id,
+        threadsMediaId: publishedId,
         permalink,
         publishedAt: now,
         errorMessage: null,
@@ -230,7 +164,7 @@ export async function handlePublishPost(
     }
     await recordApiCall(db, message.accountId);
 
-    console.log(`Post ${message.postId} published successfully as ${publishResult.id}`);
+    console.log(`Post ${message.postId} published successfully as ${publishedId}`);
   } catch (error) {
     // 9. On failure: let Cloudflare Queues handle retries.
     // queueAttempts is 1-based (1 = first delivery), so the final attempt is MAX_RETRIES.

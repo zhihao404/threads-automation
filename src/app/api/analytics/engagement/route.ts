@@ -9,6 +9,7 @@ import {
 } from "@/db/schema";
 import { eq, and, sql, desc, gte, lte } from "drizzle-orm";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
+import { formatDateToYMD } from "@/lib/date-utils";
 
 function getPeriodDays(period: string): number {
   switch (period) {
@@ -21,13 +22,6 @@ function getPeriodDays(period: string): number {
     default:
       return 30;
   }
-}
-
-function formatDate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
 }
 
 function emptyResponse() {
@@ -116,8 +110,8 @@ export async function GET(request: NextRequest) {
     const now = new Date();
     const startDate = new Date(now);
     startDate.setDate(startDate.getDate() - days);
-    const startDateStr = formatDate(startDate);
-    const endDateStr = formatDate(now);
+    const startDateStr = formatDateToYMD(startDate);
+    const endDateStr = formatDateToYMD(now);
     const startTimestamp = Math.floor(startDate.getTime() / 1000);
 
     // =========================================================================

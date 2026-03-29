@@ -9,6 +9,7 @@ import {
 import { PLANS, type PlanType } from "@/lib/stripe/config";
 import type { Database } from "@/db";
 import { ulid } from "ulid";
+import { formatDateToYMD } from "@/lib/date-utils";
 
 // =============================================================================
 // Types
@@ -48,16 +49,9 @@ export function getCurrentPeriod(): { start: string; end: string } {
   const end = new Date(year, month + 1, 0); // Last day of current month
 
   return {
-    start: formatDate(start),
-    end: formatDate(end),
+    start: formatDateToYMD(start),
+    end: formatDateToYMD(end),
   };
-}
-
-function formatDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
 }
 
 // =============================================================================
@@ -91,7 +85,7 @@ export async function getUserPlan(db: Database, userId: string): Promise<PlanTyp
  * For "template" and "account" types, returns total count instead of period usage.
  * For "schedule", returns currently active scheduled posts count.
  */
-export async function getUsage(
+async function getUsage(
   db: Database,
   userId: string,
   type: string,

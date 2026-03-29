@@ -11,14 +11,8 @@ import { guardFeatureAccess } from "@/lib/plans/guard";
 import { AIConfigurationError, resolveAIProvider } from "@/lib/ai/provider";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
 import { apiError } from "@/lib/api-response";
+import { formatDateToYMD } from "@/lib/date-utils";
 import type { GenerateReportMessage } from "@/lib/queue/types";
-
-function formatDate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
 
 // GET /api/reports?accountId=xxx&limit=10
 export async function GET(request: NextRequest) {
@@ -153,8 +147,8 @@ export async function POST(request: NextRequest) {
     const periodStart = new Date(now);
     periodStart.setDate(periodStart.getDate() - days);
 
-    const periodStartStr = formatDate(periodStart);
-    const periodEndStr = formatDate(periodEnd);
+    const periodStartStr = formatDateToYMD(periodStart);
+    const periodEndStr = formatDateToYMD(periodEnd);
 
     // Create the report record with "generating" status
     const reportId = ulid();

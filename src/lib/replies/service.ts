@@ -5,7 +5,6 @@ import {
   inboxItems,
   replyDrafts,
   replyDecisions,
-  threadsAccounts,
   type InboxItem,
   type ReplyDraft,
 } from "@/db/schema";

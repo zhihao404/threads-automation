@@ -2,14 +2,14 @@
 // GET /api/threads/connect - Initiates the Threads OAuth flow
 // =============================================================================
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getAuthorizationUrl } from "@/lib/threads/oauth";
 import { createDb } from "@/db";
 import { guardPlanLimit } from "@/lib/plans/guard";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
 import { getCfEnv } from "@/lib/cloudflare";
 
-export async function GET(request: NextRequest): Promise<NextResponse> {
+export async function GET(): Promise<NextResponse> {
   const cfEnv = await getCfEnv();
 
   const clientId = cfEnv?.THREADS_APP_ID ?? process.env.THREADS_APP_ID;

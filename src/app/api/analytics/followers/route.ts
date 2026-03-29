@@ -4,22 +4,7 @@ import { createDb } from "@/db";
 import { accountMetrics, posts, threadsAccounts } from "@/db/schema";
 import { eq, and, sql, gte, lte, desc } from "drizzle-orm";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
-
-function parsePeriodDays(period: string): number {
-  const match = period.match(/^(\d+)d$/);
-  if (match?.[1]) {
-    const days = parseInt(match[1], 10);
-    return Math.min(365, Math.max(1, days));
-  }
-  return 30;
-}
-
-function formatDate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
+import { formatDateToYMD, parsePeriodDays } from "@/lib/date-utils";
 
 export async function GET(request: NextRequest) {
   try {
@@ -69,8 +54,8 @@ export async function GET(request: NextRequest) {
     const periodStart = new Date(now);
     periodStart.setDate(periodStart.getDate() - days);
 
-    const periodStartStr = formatDate(periodStart);
-    const nowStr = formatDate(now);
+    const periodStartStr = formatDateToYMD(periodStart);
+    const nowStr = formatDateToYMD(now);
 
     // Get daily follower counts for the period
     const dailyMetrics = await db
@@ -167,7 +152,7 @@ export async function GET(request: NextRequest) {
           ? post.publishedAt * 1000
           : post.publishedAt
       );
-      const publishDateStr = formatDate(publishDate);
+      const publishDateStr = formatDateToYMD(publishDate);
 
       // Look at followers the day before and the day after
       const dayBefore = new Date(publishDate);
@@ -176,11 +161,11 @@ export async function GET(request: NextRequest) {
       dayAfter.setDate(dayAfter.getDate() + 1);
 
       const followersBefore =
-        dateFollowersMap.get(formatDate(dayBefore)) ??
+        dateFollowersMap.get(formatDateToYMD(dayBefore)) ??
         dateFollowersMap.get(publishDateStr) ??
         0;
       const followersAfter =
-        dateFollowersMap.get(formatDate(dayAfter)) ??
+        dateFollowersMap.get(formatDateToYMD(dayAfter)) ??
         dateFollowersMap.get(publishDateStr) ??
         0;
 

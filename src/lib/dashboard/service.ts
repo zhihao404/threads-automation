@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import type { Database } from "@/db";
 import { accountMetrics, postMetrics, posts, threadsAccounts } from "@/db/schema";
+import { formatDateToYMD } from "@/lib/date-utils";
 
 export interface DashboardAccount {
   id: string;
@@ -51,7 +52,7 @@ export type DashboardDataResult =
   | { status: "ok"; data: DashboardData }
   | { status: "account_not_found" };
 
-export function getDashboardPeriodDays(period: string): number {
+function getDashboardPeriodDays(period: string): number {
   switch (period) {
     case "14d":
       return 14;
@@ -77,13 +78,6 @@ function createEmptyDashboardData(accounts: DashboardAccount[] = []): DashboardD
     dailyMetrics: [],
     postsByStatus: { published: 0, scheduled: 0, draft: 0, failed: 0 },
   };
-}
-
-function formatDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }
 
 function calcChange(current: number, previous: number): number {
@@ -145,10 +139,10 @@ export async function getDashboardData(
   const previousStart = new Date(currentStart);
   previousStart.setDate(previousStart.getDate() - days);
 
-  const currentStartStr = formatDate(currentStart);
-  const previousStartStr = formatDate(previousStart);
-  const currentEndStr = formatDate(now);
-  const previousEndStr = formatDate(currentStart);
+  const currentStartStr = formatDateToYMD(currentStart);
+  const previousStartStr = formatDateToYMD(previousStart);
+  const currentEndStr = formatDateToYMD(now);
+  const previousEndStr = formatDateToYMD(currentStart);
 
   const currentMetrics = await db
     .select({

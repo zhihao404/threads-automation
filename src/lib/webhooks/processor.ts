@@ -54,7 +54,7 @@ function deriveMetaEventId(payload: WebhookPayload): string | null {
 // Check for duplicate events
 // =============================================================================
 
-export async function isDuplicateEvent(
+async function isDuplicateEvent(
   db: Database,
   metaEventId: string,
 ): Promise<boolean> {
@@ -71,7 +71,7 @@ export async function isDuplicateEvent(
 // Check for replay attacks (events older than MAX_EVENT_AGE_MS)
 // =============================================================================
 
-export function isReplayEvent(payload: WebhookPayload): boolean {
+function isReplayEvent(payload: WebhookPayload): boolean {
   const now = Date.now();
 
   for (const entry of payload.entry) {
@@ -89,7 +89,7 @@ export function isReplayEvent(payload: WebhookPayload): boolean {
 // Store raw webhook event for audit/debugging
 // =============================================================================
 
-export async function storeRawEvent(
+async function storeRawEvent(
   db: Database,
   topic: string,
   payload: string,
@@ -113,7 +113,7 @@ export async function storeRawEvent(
 // Mark a raw webhook event as processed
 // =============================================================================
 
-export async function markEventProcessed(
+async function markEventProcessed(
   db: Database,
   eventId: string,
 ): Promise<void> {
@@ -124,10 +124,80 @@ export async function markEventProcessed(
 }
 
 // =============================================================================
+// Build notification from a webhook change
+// =============================================================================
+
+function truncateBody(text: string, maxLen = 200): string {
+  return text.length > maxLen ? text.slice(0, maxLen) + "..." : text;
+}
+
+function buildNotification(
+  field: string,
+  value: Record<string, unknown>,
+  accountId: string,
+  now: Date,
+): typeof notifications.$inferInsert | null {
+  const base = { id: ulid(), accountId, isRead: false, createdAt: now } as const;
+
+  switch (field) {
+    case "replies":
+    case "mentions": {
+      const from = value.from as { id: string; username: string } | undefined;
+      const text = (value.text as string) ?? "";
+      const username = from?.username ?? "不明なユーザー";
+      const title = field === "replies"
+        ? `新しいリプライ: @${username}が返信しました`
+        : `@${username}にメンションされました`;
+      const type = field === "replies" ? "reply" as const : "mention" as const;
+
+      return {
+        ...base,
+        type,
+        title,
+        body: truncateBody(text),
+        metadata: JSON.stringify({
+          fromId: from?.id,
+          fromUsername: username,
+          text: value.text,
+          ...(field === "replies" ? { mediaType: value.media_type } : {}),
+          permalink: value.permalink,
+          timestamp: value.timestamp,
+        }),
+      };
+    }
+
+    case "publish":
+      return {
+        ...base,
+        type: "publish",
+        title: "投稿が公開されました",
+        body: null,
+        metadata: JSON.stringify({
+          mediaType: value.media_type,
+          permalink: value.permalink,
+          timestamp: value.timestamp,
+        }),
+      };
+
+    case "delete":
+      return {
+        ...base,
+        type: "delete",
+        title: "投稿が削除されました",
+        body: null,
+        metadata: JSON.stringify({ timestamp: value.timestamp }),
+      };
+
+    default:
+      return null;
+  }
+}
+
+// =============================================================================
 // Process a single webhook entry
 // =============================================================================
 
-export async function processWebhookEntry(
+async function processWebhookEntry(
   db: Database,
   entry: WebhookEntry,
 ): Promise<void> {
@@ -150,96 +220,11 @@ export async function processWebhookEntry(
     const { field, value } = change;
     const now = new Date();
 
-    switch (field) {
-      case "replies": {
-        const from = value.from as
-          | { id: string; username: string }
-          | undefined;
-        const text = (value.text as string) ?? "";
-        const username = from?.username ?? "不明なユーザー";
-
-        await db.insert(notifications).values({
-          id: ulid(),
-          accountId: account.id,
-          type: "reply",
-          title: `新しいリプライ: @${username}が返信しました`,
-          body: text.length > 200 ? text.slice(0, 200) + "..." : text,
-          metadata: JSON.stringify({
-            fromId: from?.id,
-            fromUsername: username,
-            text: value.text,
-            mediaType: value.media_type,
-            permalink: value.permalink,
-            timestamp: value.timestamp,
-          }),
-          isRead: false,
-          createdAt: now,
-        });
-        break;
-      }
-
-      case "mentions": {
-        const from = value.from as
-          | { id: string; username: string }
-          | undefined;
-        const text = (value.text as string) ?? "";
-        const username = from?.username ?? "不明なユーザー";
-
-        await db.insert(notifications).values({
-          id: ulid(),
-          accountId: account.id,
-          type: "mention",
-          title: `@${username}にメンションされました`,
-          body: text.length > 200 ? text.slice(0, 200) + "..." : text,
-          metadata: JSON.stringify({
-            fromId: from?.id,
-            fromUsername: username,
-            text: value.text,
-            permalink: value.permalink,
-            timestamp: value.timestamp,
-          }),
-          isRead: false,
-          createdAt: now,
-        });
-        break;
-      }
-
-      case "publish": {
-        await db.insert(notifications).values({
-          id: ulid(),
-          accountId: account.id,
-          type: "publish",
-          title: "投稿が公開されました",
-          body: null,
-          metadata: JSON.stringify({
-            mediaType: value.media_type,
-            permalink: value.permalink,
-            timestamp: value.timestamp,
-          }),
-          isRead: false,
-          createdAt: now,
-        });
-        break;
-      }
-
-      case "delete": {
-        await db.insert(notifications).values({
-          id: ulid(),
-          accountId: account.id,
-          type: "delete",
-          title: "投稿が削除されました",
-          body: null,
-          metadata: JSON.stringify({
-            timestamp: value.timestamp,
-          }),
-          isRead: false,
-          createdAt: now,
-        });
-        break;
-      }
-
-      default:
-        console.warn(`Webhook: unknown field "${field}" for entry ${entry.id}`);
+    const notification = buildNotification(field, value, account.id, now);
+    if (notification) {
+      await db.insert(notifications).values(notification);
+    } else {
+      console.warn(`Webhook: unknown field "${field}" for entry ${entry.id}`);
     }
   }
 }
@@ -248,7 +233,7 @@ export async function processWebhookEntry(
 // Process a full webhook payload
 // =============================================================================
 
-export async function processWebhookPayload(
+async function processWebhookPayload(
   db: Database,
   payload: WebhookPayload,
 ): Promise<void> {

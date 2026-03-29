@@ -10,7 +10,7 @@ import { createWorkerDb } from "../db";
 import { posts, postQueue, threadsAccounts } from "../../src/db/schema";
 import { decryptTokenWithKey } from "../crypto";
 import { ThreadsClient } from "../threads-client";
-import { getMediaType } from "../utils";
+import { createMediaContainer, publishAndGetPermalink } from "../publish-helpers";
 import {
   canPublish,
   canReply,
@@ -142,71 +142,9 @@ export async function handleProcessQueue(
       .set({ status: "publishing", updatedAt: now })
       .where(eq(posts.id, queueItem.postId));
 
-    let containerId: string;
-    const mediaUrls: string[] = post.mediaUrls ? JSON.parse(post.mediaUrls) : [];
-
-    switch (post.mediaType) {
-      case "TEXT":
-        containerId = await client.createTextPost({
-          text: post.content,
-          replyControl: post.replyControl as "everyone" | "accounts_you_follow" | "mentioned_only",
-          topicTag: post.topicTag ?? undefined,
-        });
-        break;
-
-      case "IMAGE":
-        if (!mediaUrls[0]) {
-          throw new Error("Image post requires at least one media URL");
-        }
-        containerId = await client.createImagePost({
-          text: post.content,
-          imageUrl: mediaUrls[0],
-          replyControl: post.replyControl as "everyone" | "accounts_you_follow" | "mentioned_only",
-          topicTag: post.topicTag ?? undefined,
-        });
-        break;
-
-      case "VIDEO":
-        if (!mediaUrls[0]) {
-          throw new Error("Video post requires at least one media URL");
-        }
-        containerId = await client.createVideoPost({
-          text: post.content,
-          videoUrl: mediaUrls[0],
-          replyControl: post.replyControl as "everyone" | "accounts_you_follow" | "mentioned_only",
-          topicTag: post.topicTag ?? undefined,
-        });
-        await client.waitForContainerReady(containerId);
-        break;
-
-      case "CAROUSEL":
-        if (!mediaUrls || mediaUrls.length < 2) {
-          throw new Error("Carousel post requires at least 2 media URLs");
-        }
-        containerId = await client.createCarouselPost({
-          text: post.content,
-          children: mediaUrls.map((url) => ({
-            mediaType: getMediaType(url),
-            url,
-          })),
-          replyControl: post.replyControl as "everyone" | "accounts_you_follow" | "mentioned_only",
-          topicTag: post.topicTag ?? undefined,
-        });
-        break;
-
-      default:
-        throw new Error(`Unsupported media type: ${post.mediaType}`);
-    }
-
-    const publishResult = await client.publishPost(containerId);
-
-    let permalink: string | null = null;
-    try {
-      const threadPost = await client.getPost(publishResult.id);
-      permalink = threadPost.permalink ?? null;
-    } catch {
-      // Permalink fetch is non-critical
-    }
+    // Create media container and publish
+    const containerId = await createMediaContainer(client, post);
+    const { id: publishedId, permalink } = await publishAndGetPermalink(client, containerId);
 
     // Batch: update post status, remove from queue, update remaining positions
     await db.batch([
@@ -214,7 +152,7 @@ export async function handleProcessQueue(
         .update(posts)
         .set({
           status: "published",
-          threadsMediaId: publishResult.id,
+          threadsMediaId: publishedId,
           permalink,
           publishedAt: now,
           errorMessage: null,
@@ -244,7 +182,7 @@ export async function handleProcessQueue(
     await recordApiCall(db, message.accountId);
 
     console.log(
-      `Queue item ${queueItem.id} processed: post ${queueItem.postId} published as ${publishResult.id}`,
+      `Queue item ${queueItem.id} processed: post ${queueItem.postId} published as ${publishedId}`,
     );
   } catch (error) {
     const errorMessage =

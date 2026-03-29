@@ -20,13 +20,7 @@ import {
   type ReportMetrics,
 } from "../../src/lib/ai/report";
 import { resolveAIProvider } from "../../src/lib/ai/provider";
-
-function formatDate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
+import { formatDateToYMD } from "../../src/lib/date-utils";
 
 /**
  * Handles the generate_report queue message.
@@ -90,9 +84,9 @@ export async function handleGenerateReport(
     const previousStart = new Date(periodStart);
     previousStart.setDate(previousStart.getDate() - days);
 
-    const periodStartStr = formatDate(periodStart);
-    const periodEndStr = formatDate(periodEnd);
-    const previousStartStr = formatDate(previousStart);
+    const periodStartStr = formatDateToYMD(periodStart);
+    const periodEndStr = formatDateToYMD(periodEnd);
+    const previousStartStr = formatDateToYMD(previousStart);
 
     // Fetch current period account metrics
     const currentAccountMetrics = await db

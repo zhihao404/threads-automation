@@ -4,15 +4,7 @@ import { createDb } from "@/db";
 import { posts, postMetrics, threadsAccounts } from "@/db/schema";
 import { eq, and, sql, desc } from "drizzle-orm";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
-
-function parsePeriodDays(period: string): number {
-  const match = period.match(/^(\d+)d$/);
-  if (match?.[1]) {
-    const days = parseInt(match[1], 10);
-    return Math.min(365, Math.max(1, days));
-  }
-  return 30;
-}
+import { parsePeriodDays } from "@/lib/date-utils";
 
 type SortField = "views" | "likes" | "replies" | "reposts" | "engagementRate" | "publishedAt";
 

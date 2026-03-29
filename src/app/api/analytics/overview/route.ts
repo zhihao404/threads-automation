@@ -4,22 +4,7 @@ import { createDb } from "@/db";
 import { accountMetrics, posts, postMetrics, threadsAccounts } from "@/db/schema";
 import { eq, and, sql, desc, gte, lte } from "drizzle-orm";
 import { getAuthenticatedUserId } from "@/lib/auth-helpers";
-
-function parsePeriodDays(period: string): number {
-  const match = period.match(/^(\d+)d$/);
-  if (match?.[1]) {
-    const days = parseInt(match[1], 10);
-    return Math.min(365, Math.max(1, days));
-  }
-  return 30;
-}
-
-function formatDate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
+import { formatDateToYMD, parsePeriodDays } from "@/lib/date-utils";
 
 export async function GET(request: NextRequest) {
   try {
@@ -71,10 +56,10 @@ export async function GET(request: NextRequest) {
     const previousStart = new Date(currentStart);
     previousStart.setDate(previousStart.getDate() - days);
 
-    const currentStartStr = formatDate(currentStart);
-    const previousStartStr = formatDate(previousStart);
-    const currentEndStr = formatDate(now);
-    const currentStartStrExclusive = formatDate(new Date(currentStart.getTime() - 86400000));
+    const currentStartStr = formatDateToYMD(currentStart);
+    const previousStartStr = formatDateToYMD(previousStart);
+    const currentEndStr = formatDateToYMD(now);
+    const currentStartStrExclusive = formatDateToYMD(new Date(currentStart.getTime() - 86400000));
 
     // Get current period account metrics
     const currentMetrics = await db
